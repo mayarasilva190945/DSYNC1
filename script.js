@@ -730,7 +730,7 @@ async function carregarDaNuvem() {
     caixaModeloB: 0,
     embalagem40x50: 0
   };
-  
+
   state.configInsumos = dados.configInsumos || {};
   state.produtoInsumoMap = dados.produtoInsumoMap || {};
   state.pedidosSeparar = dados.pedidosSeparar || [];
@@ -2307,18 +2307,99 @@ function carregarCarga() {
       const badgeStyle = isCarga ? 'background:var(--accent);' : 'background:var(--info);';
       const ped = item.pedidoCodigo ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>` : '';
       html += `
-        <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
-          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
+        <div class="carga-card"
+            onclick="abrirDetalhesDaCarga('${item.uid}')"
+            title="Clique para ver o pedido associado"
+            style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px; cursor:pointer;">
+
+          <div>
+            <strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
             <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+            <small style="color:var(--info);">👆 Clique para ver o pedido</small>
           </div>
-          <button class="btn btn-xs btn-danger" onclick="removerDaCarga('${item.uid}')">🗑️</button>
-        </div>`;
+
+          <button class="btn btn-xs btn-danger"
+                  onclick="event.stopPropagation(); removerDaCarga('${item.uid}')">
+            🗑️
+          </button>
+        </div>`
     }
   });
   c.innerHTML = html;
   document.getElementById('totalCargaProdutos').textContent = state.carga.length;
   document.getElementById('totalCargaItens').textContent = total;
 }
+
+function abrirDetalhesDaCarga(uid) {
+  const item = state.carga.find(c => c.uid === uid);
+
+  if (!item) {
+    mostrarToast('❌ Carga não encontrada!', 'error');
+    return;
+  }
+
+  // Carga vinculada ao pedido de carga atual
+  if (item.pedidoCodigo === CARGA_PEDIDO_TAG) {
+    if (!state.pedidoCargaAtual?.ativo) {
+      mostrarToast('❌ Não há pedido de carga ativo.', 'error');
+      return;
+    }
+
+    switchTab('pedidos');
+    mostrarSubAba('carga');
+
+    setTimeout(() => {
+      const detalhes = document.getElementById('pedidoCargaContainer');
+      detalhes?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+
+    return;
+  }
+
+  // Carga vinculada a um pedido de separação
+  if (item.pedidoCodigo) {
+    const pedido = state.pedidosSeparar.find(
+      p => p.codigo === item.pedidoCodigo
+    );
+
+    if (pedido) {
+      editarPedido(pedido.codigo);
+      return;
+    }
+
+    const finalizado = state.pedidosFinalizados.find(
+      p => p.codigo === item.pedidoCodigo
+    );
+
+    if (finalizado) {
+      switchTab('pedidos');
+      mostrarSubAba('finalizado');
+
+      setTimeout(() => {
+        const lista = document.getElementById('listaPedidosFinalizados');
+        const cartoes = lista?.querySelectorAll('.pedido-card') || [];
+
+        for (const cartao of cartoes) {
+          if (cartao.textContent.includes(finalizado.codigo)) {
+            cartao.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center'
+            });
+            break;
+          }
+        }
+      }, 150);
+
+      return;
+    }
+  }
+
+  mostrarToast(
+    'ℹ️ Esta reserva não está vinculada a um pedido.',
+    'info'
+  );
+}
+
 
 // ===== LEITOR DE PEDIDOS =====
 function extrairCodigoEQuantidade(valorBruto) {
