@@ -2281,49 +2281,117 @@ function finalizarCarga() {
 }
 
 
+
 function carregarCarga() {
-  const c = document.getElementById('cargaContainer');
-  if (!c) return;
+  console.log('[CARGA] Iniciando carregarCarga()');
 
-  // Mantém os controles da carga.
-  c.innerHTML = `
-    <div class="controls">
-      <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
-      <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
-      <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
-    </div>
-    <div id="tabelaCargaAtiva"></div>
-  `;
+  try {
+    const c = document.getElementById('cargaContainer');
 
-  // Mantém apenas os produtos que ainda existem no cadastro.
-  const produtosValidos = state.carga.filter(item =>
-    state.produtos.some(p => p.id === item.id)
-  );
+    if (!c) {
+      console.error('[CARGA] ERRO: elemento cargaContainer não encontrado.');
+      return;
+    }
 
-  // Atualiza os indicadores.
-  const total = produtosValidos.reduce(
-    (soma, item) => soma + (Number(item.quantidade) || 0),
-    0
-  );
+    console.log('[CARGA] Container encontrado:', c);
 
-  const elProdutos = document.getElementById('totalCargaProdutos');
-  const elItens = document.getElementById('totalCargaItens');
+    console.log('[CARGA] Estado:', {
+      stateExiste: typeof state !== 'undefined',
+      cargaArray: Array.isArray(state?.carga),
+      totalReservas: state?.carga?.length,
+      totalProdutos: state?.produtos?.length
+    });
 
-  if (elProdutos) elProdutos.textContent = produtosValidos.length;
-  if (elItens) elItens.textContent = total;
+    let html = `
+      <div class="controls">
+        <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
+        <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
+        <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
+      </div>`;
 
-  // Renderiza a tabela horizontal no lugar dos cards.
-  if (typeof renderizarTabelaCargaAtiva === 'function') {
-    renderizarTabelaCargaAtiva(produtosValidos);
-  } else if (typeof renderizarCargaAtiva === 'function') {
-    renderizarCargaAtiva();
-  } else {
-    console.error('Renderizadores da tabela de carga não encontrados.');
+    let total = 0;
+    let quantidadeRenderizada = 0;
+
+    if (!Array.isArray(state.carga)) {
+      console.error('[CARGA] ERRO: state.carga não é um array.');
+      return;
+    }
+
+    state.carga.forEach(item => {
+      const produto = state.produtos.find(p => p.id === item.id);
+
+      if (!produto) {
+        console.warn('[CARGA] Produto não encontrado:', item);
+        return;
+      }
+
+      total += Number(item.quantidade) || 0;
+      quantidadeRenderizada++;
+
+      const prateleira = state.prateleiras.find(
+        s => s.id === item.prateleira
+      );
+
+      const nome = prateleira?.nome || '?';
+
+      const loc = item.prateleira && item.posicao
+        ? `📍 ${nome}${item.posicao}`
+        : '📍 Sem local';
+
+      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
+      const badgeStyle = isCarga
+        ? 'background:var(--accent);'
+        : 'background:var(--info);';
+
+      const ped = item.pedidoCodigo
+        ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>`
+        : '';
+
+      html += `
+        <div class="carga-card"
+             onclick="abrirDetalhesDaCarga('${item.uid}')"
+             title="Clique para ver o pedido associado"
+             style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;cursor:pointer;">
+          <div>
+            <strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
+            <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+            <small style="color:var(--info);">👆 Clique para ver o pedido</small>
+          </div>
+          <button class="btn btn-xs btn-danger"
+                  onclick="event.stopPropagation();removerDaCarga('${item.uid}')">
+            🗑️
+          </button>
+        </div>`;
+    });
+
+    c.innerHTML = html;
+
+    const elProdutos = document.getElementById('totalCargaProdutos');
+    const elItens = document.getElementById('totalCargaItens');
+
+    if (elProdutos) {
+      elProdutos.textContent = state.carga.filter(item =>
+        state.produtos.some(p => p.id === item.id)
+      ).length;
+    }
+
+    if (elItens) {
+      elItens.textContent = total;
+    }
+
+    console.log('[CARGA] Renderização concluída:', {
+      reservasNoEstado: state.carga.length,
+      produtosRenderizados: quantidadeRenderizada,
+      totalItens: total,
+      htmlGerado: c.innerHTML.length,
+      containerVisivel: c.offsetParent !== null
+    });
+
+  } catch (erro) {
+    console.error('[CARGA] ERRO durante a execução:', erro);
+    console.error('[CARGA] Stack:', erro.stack);
   }
 }
-
-
-
 
 function abrirDetalhesDaCarga(uid) {
   const item = state.carga.find(c => c.uid === uid);
