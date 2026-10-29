@@ -2280,24 +2280,27 @@ function finalizarCarga() {
   mostrarToast('🚛 Carga finalizada!', 'success');
 }
 
+
 function carregarCarga() {
   const c = document.getElementById('cargaContainer');
   if (!c) return;
 
-  // Mantém os controles existentes, mas remove a listagem em cards.
+  // Mantém os controles da carga.
   c.innerHTML = `
     <div class="controls">
       <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
       <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
       <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
     </div>
+    <div id="tabelaCargaAtiva"></div>
   `;
 
-  // Atualiza os indicadores de carga.
+  // Mantém apenas os produtos que ainda existem no cadastro.
   const produtosValidos = state.carga.filter(item =>
     state.produtos.some(p => p.id === item.id)
   );
 
+  // Atualiza os indicadores.
   const total = produtosValidos.reduce(
     (soma, item) => soma + (Number(item.quantidade) || 0),
     0
@@ -2308,7 +2311,17 @@ function carregarCarga() {
 
   if (elProdutos) elProdutos.textContent = produtosValidos.length;
   if (elItens) elItens.textContent = total;
+
+  // Renderiza a tabela horizontal no lugar dos cards.
+  if (typeof renderizarTabelaCargaAtiva === 'function') {
+    renderizarTabelaCargaAtiva(produtosValidos);
+  } else if (typeof renderizarCargaAtiva === 'function') {
+    renderizarCargaAtiva();
+  } else {
+    console.error('Renderizadores da tabela de carga não encontrados.');
+  }
 }
+
 
 
 
