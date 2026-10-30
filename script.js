@@ -611,43 +611,75 @@ async function salvarNaNuvem() {
   }
 
   const dados = {
-    produtos: state.produtos,
-    prateleiras: state.prateleiras,
-    carga: state.carga,
-    historico: state.historico,
-    insumos: state.insumos,
-    configInsumos: state.configInsumos,
-    produtoInsumoMap: state.produtoInsumoMap,
-    pedidosSeparar: state.pedidosSeparar,
-    pedidosFinalizados: state.pedidosFinalizados,
-    injecao: state.injecao,
-    injetando: state.injetando,
-    injetados: state.injetados,
-    materiaPrima: state.materiaPrima,
-    pedidoCargaAtual: state.pedidoCargaAtual
+    produtos: state.produtos || [],
+    prateleiras: state.prateleiras || [],
+    carga: state.carga || [],
+    historico: state.historico || [],
+    insumos: state.insumos || {
+      embalagens: {},
+      caixaModeloA: 0,
+      caixaModeloB: 0,
+      embalagem40x50: 0
+    },
+    configInsumos: state.configInsumos || {},
+    produtoInsumoMap: state.produtoInsumoMap || {},
+    pedidosSeparar: state.pedidosSeparar || [],
+    pedidosFinalizados: state.pedidosFinalizados || [],
+    injecao: state.injecao || [],
+    injetando: state.injetando || [],
+    injetados: state.injetados || [],
+    materiaPrima: state.materiaPrima || {
+      tipos: [],
+      estoque: {}
+    },
+
+    // Pedido de carga compartilhado entre todos os usuários
+    pedidoCargaAtual: state.pedidoCargaAtual || {
+      ativo: false,
+      codigo: '',
+      itens: {}
+    }
   };
 
-  const { error } = await window.supabase
-    .from('dsync_compartilhado')
-    .update({
-      data: dados,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', 1);
+  try {
+    const { data: registroAtualizado, error } = await window.supabase
+      .from('dsync_compartilhado')
+      .update({
+        data: dados,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', 1)
+      .select('id')
+      .maybeSingle();
 
-  if (error) {
-    console.error('Erro ao salvar dados compartilhados:', error);
-    mostrarToast('❌ Erro ao salvar na nuvem!', 'error');
-    return;
+    if (error) {
+      console.error('Erro ao salvar dados compartilhados:', error);
+      mostrarToast('❌ Erro ao salvar na nuvem!', 'error');
+      return;
+    }
+
+    if (!registroAtualizado) {
+      console.error('Nenhum registro encontrado com id = 1.');
+      mostrarToast('❌ Registro compartilhado não encontrado!', 'error');
+      return;
+    }
+
+    console.log('☁️ Dados compartilhados salvos com sucesso!');
+    console.log('📦 Pedido de carga salvo:', dados.pedidoCargaAtual);
+
+    mostrarToast('☁️ Dados compartilhados salvos!', 'success');
+
+    const el = document.getElementById('ultimoBackupNuvem');
+
+    if (el) {
+      el.textContent = new Date().toLocaleString('pt-BR');
+    }
+
+  } catch (erro) {
+    console.error('Erro inesperado ao salvar na nuvem:', erro);
+    mostrarToast('❌ Falha inesperada ao salvar na nuvem!', 'error');
   }
-
-  console.log('☁️ Dados compartilhados salvos!');
-  mostrarToast('☁️ Dados compartilhados salvos!', 'success');
-
-  const el = document.getElementById('ultimoBackupNuvem');
-  if (el) el.textContent = new Date().toLocaleString('pt-BR');
 }
-
 
 let temporizadorSalvamento = null;
 let salvamentoEmAndamento = false;
@@ -3354,7 +3386,7 @@ function mostrarSubAba(subAba) {
   else if (subAba === 'pedidonovo') atualizarPedidoNovo();
   else if (subAba === 'separar') atualizarListasPedidos();
   else if (subAba === 'finalizado') atualizarListasPedidos();
-  else if (subAba === 'carga') { montarPedidoCarga();}
+  else if (subAba === 'carga') { montarPedidoCarga(); atualizarPedidoCarga(); }
   else if (subAba === 'injecao') renderizarInjecao();
   else if (subAba === 'injetar') renderizarInjetar();
   else if (subAba === 'injetando') renderizarInjetando();
@@ -3956,13 +3988,24 @@ function excluirPedido(codigo, tipo) {
 // ============================================================
 // PEDIDO DE CARGA PERSISTENTE
 // ============================================================
-
 function montarPedidoCarga() {
   const c = document.getElementById('pedidoCargaContainer');
   if (!c) return;
 
-  if (!state.pedidoCargaAtual) {
-    state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
+  // Garante que exista uma estrutura válida para o pedido.
+  if (
+    !state.pedidoCargaAtual ||
+    typeof state.pedidoCargaAtual !== 'object'
+  ) {
+    state.pedidoCargaAtual = {
+      ativo: false,
+      codigo: '',
+      itens: {}
+    };
+  }
+
+  if (!state.pedidoCargaAtual.itens) {
+    state.pedidoCargaAtual.itens = {};
   }
 
   if (!state.pedidoCargaAtual.ativo) {
@@ -3973,11 +4016,16 @@ function montarPedidoCarga() {
           Nenhum pedido de carga ativo.
         </p>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:15px;">
-          <input type="text" id="codigoCargaInput"
+          <input
+            type="text"
+            id="codigoCargaInput"
             placeholder="Código do Pedido (ex: CARGA-001)"
-            style="min-width:250px;padding:12px 15px;">
-          <button class="btn btn-lg btn-success"
-            onclick="criarPedidoCarga()">
+            style="min-width:250px;padding:12px 15px;border:2px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);"
+          >
+          <button
+            class="btn btn-lg btn-success"
+            onclick="criarPedidoCarga()"
+          >
             ➕ Criar Pedido de Carga
           </button>
         </div>
@@ -3986,19 +4034,6 @@ function montarPedidoCarga() {
     renderizarCargaAtiva();
   }
 }
-
-function atualizarPedidoCarga() {
-  if (!state.pedidoCargaAtual) {
-    state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
-  }
-
-  if (state.pedidoCargaAtual.ativo) {
-    renderizarCargaAtiva();
-  } else {
-    montarPedidoCarga();
-  }
-}
-
 
 function criarPedidoCarga() {
   const codigo = (document.getElementById('codigoCargaInput')?.value || '').trim() || ('CARGA-' + Date.now().toString().slice(-4));
@@ -4084,6 +4119,28 @@ function renderizarTotaisCarga(itens) {
   `;
 }
 
+function atualizarPedidoCarga() {
+  if (
+    !state.pedidoCargaAtual ||
+    typeof state.pedidoCargaAtual !== 'object'
+  ) {
+    state.pedidoCargaAtual = {
+      ativo: false,
+      codigo: '',
+      itens: {}
+    };
+  }
+
+  if (!state.pedidoCargaAtual.itens) {
+    state.pedidoCargaAtual.itens = {};
+  }
+
+  if (state.pedidoCargaAtual.ativo) {
+    renderizarCargaAtiva();
+  } else {
+    montarPedidoCarga();
+  }
+}
 
 function adicionarProdutoPedidoCarga() {
   const pid = document.getElementById('produtoPedidoCargaSelect').value;

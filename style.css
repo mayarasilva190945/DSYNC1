@@ -211,20 +211,9 @@ body.dark-mode .dash-card .dash-number { color: #f1f5f9; }
 .cadastro-lista td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
 .cadastro-lista tr:hover { background: var(--bg-subtle); }
 
-.carga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; width: 100%; box-sizing: border-box; }
-.carga-card { background: var(--bg-card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); text-align: left; border: 1px solid var(--border); border-left: 5px solid var(--accent); transition: var(--transition); display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; gap: 10px; }
+.carga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.carga-card { background: var(--bg-card); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); text-align: center; border: 1px solid var(--border); border-left: 4px solid var(--accent); transition: var(--transition); }
 .carga-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
-.carga-card.completo { border-color: rgba(16, 185, 129, 0.4); border-left-color: var(--success); }
-.carga-card.pronto { border-color: rgba(16, 185, 129, 0.4); border-left-color: var(--success); }
-.carga-card.falta { border-left-color: var(--danger); }
-.carga-card-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin: 10px 0; }
-.carga-metric-box { background: var(--bg-subtle); padding: 8px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
-.carga-metric-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; }
-.carga-metric-val { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.2; margin-top: 2px; }
-.carga-metric-box.reservado .carga-metric-label, .carga-metric-box.reservado .carga-metric-val { color: var(--success); }
-.carga-metric-box.produzido .carga-metric-label, .carga-metric-box.produzido .carga-metric-val { color: var(--info); }
-.carga-metric-box.falta .carga-metric-label, .carga-metric-box.falta .carga-metric-val { color: var(--danger); }
-.carga-metric-box.completo .carga-metric-label, .carga-metric-box.completo .carga-metric-val { color: var(--success); }
 
 .grafico-wrapper { position: relative; height: 380px; margin: 20px 0; }
 .grafico-controls { display: flex; gap: 10px; flex-wrap: wrap; }
