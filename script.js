@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // D.Sync - SISTEMA COMPLETO COM SUPABASE + SCANNERS
 // ============================================================
 
@@ -2293,9 +2293,12 @@ function finalizarCarga() {
   mostrarToast('🚛 Carga finalizada! Os cards continuam visíveis até o pedido ser finalizado.', 'success');
 }
 
+
+
 function carregarCarga() {
   const c = document.getElementById('cargaContainer');
   if (!c) return;
+
   let html = `
     <div class="controls" style="grid-column: 1 / -1; width: 100%; display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
       <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
@@ -2304,95 +2307,204 @@ function carregarCarga() {
     </div>`;
 
   if (!Array.isArray(state.carga) || state.carga.length === 0) {
-    html += '<div style="grid-column: 1 / -1; text-align:center; padding:40px; color:var(--text-muted);">🚛 Nenhuma reserva na carga.</div>';
+    html += `
+      <div style="grid-column: 1 / -1; text-align:center; padding:40px; color:var(--text-muted);">
+        🚛 Nenhuma reserva na carga.
+      </div>`;
+
     c.innerHTML = html;
+
     const elP = document.getElementById('totalCargaProdutos');
     const elI = document.getElementById('totalCargaItens');
+
     if (elP) elP.textContent = '0';
     if (elI) elI.textContent = '0';
+
     return;
   }
 
   let total = 0;
+  let totalCards = 0;
+
   state.carga.forEach(item => {
     const produto = state.produtos.find(p => p.id === item.id);
-    if (produto) {
-      total += item.quantidade;
-      const nomePrateleira = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
-      const loc = item.prateleira && item.posicao ? `📍 ${nomePrateleira}${item.posicao}` : '📍 Sem local';
-      const isCarregado = item.carregado || item.finalizado;
+    if (!produto) return;
 
-      // ── Métricas ──
-      const pedidoItem = state.pedidoCargaAtual?.itens?.[item.id] || {};
-      const pedida   = pedidoItem.quantidadePedida  || item.quantidade;
-      const reservado = getReservadoCargaAtual(item.id);
-      const produzido = pedidoItem.quantidadeProduzida || 0;
-      const falta     = Math.max(0, pedida - reservado - produzido);
+    totalCards++;
+    total += Number(item.quantidade) || 0;
 
-      // ── Status class ──
-      const statusClass = falta === 0 ? 'completo' : (isCarregado ? 'pronto' : 'falta');
+    const codigoPedido = item.pedidoCodigo || '';
 
-      // ── Badges ──
-      const badgeCarregado = isCarregado
-        ? `<span style="background:var(--success,#10b981);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;margin-left:4px;">✅ Pronto</span>`
-        : '';
-      const badgePed = item.pedidoCodigo
-        ? `<span style="background:var(--info,#3b82f6);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;">📋 ${item.pedidoCodigo}</span>`
-        : '<span style="background:#64748b;color:white;font-size:10px;padding:2px 6px;border-radius:10px;">Avulso</span>';
+    // Busca o pedido correspondente ao card
+    const pedidoSeparacao = state.pedidosSeparar.find(
+      p => p.codigo === codigoPedido
+    );
 
-      // ── Classe de borda inline ──
-      const borderColor  = isCarregado ? 'var(--success,#10b981)' : (falta > 0 ? 'var(--danger,#ef4444)' : 'var(--accent,#f59e0b)');
-      const borderLeft   = `5px solid ${borderColor}`;
-      const borderTop    = `1px solid ${isCarregado ? 'var(--success,#10b981)' : 'var(--border)'}`;
+    const pedidoFinalizado = state.pedidosFinalizados.find(
+      p => p.codigo === codigoPedido
+    );
 
-      html += `
-        <div class="carga-card ${statusClass}" style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;border:${borderTop};border-left:${borderLeft};background:var(--bg-card,#fff);box-shadow:0 2px 6px rgba(0,0,0,0.06);cursor:pointer;"
-             onclick="abrirDetalhesDaCarga('${item.uid}')" title="Clique para ver o pedido">
+    // Verifica se o pedido atualmente aberto é o mesmo do card
+    const pedidoAtualCorresponde =
+      state.pedidoCargaAtual?.codigo === codigoPedido;
 
-          <!-- Cabeçalho: badges + remover -->
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap;">
-            <div>${badgePed}${badgeCarregado}</div>
-            <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); removerDaCarga('${item.uid}')" title="Remover item">🗑️</button>
+    // Busca os dados do produto dentro do pedido correto
+    const pedidoItemAtual = pedidoAtualCorresponde
+      ? state.pedidoCargaAtual.itens?.[item.id]
+      : null;
+
+    const pedidoItemSeparacao = pedidoSeparacao?.itens
+      ? Object.values(pedidoSeparacao.itens).find(
+          i => i.produtoId === item.id
+        )
+      : null;
+
+    const pedidoItemFinalizado = pedidoFinalizado?.itens
+      ? Object.values(pedidoFinalizado.itens).find(
+          i => i.produtoId === item.id
+        )
+      : null;
+
+    const pedidoItem =
+      pedidoItemAtual ||
+      pedidoItemSeparacao ||
+      pedidoItemFinalizado ||
+      {};
+
+    // Quantidade pedida pelo pedido
+    const pedida = Number(
+      pedidoItem.quantidadePedida ??
+      pedidoItem.pacotes ??
+      pedidoItem.caixas ??
+      item.quantidade
+    ) || 0;
+
+    // Soma somente as reservas deste produto neste pedido
+    const reservado = state.carga
+      .filter(cargaItem =>
+        cargaItem.id === item.id &&
+        cargaItem.pedidoCodigo === codigoPedido
+      )
+      .reduce(
+        (soma, cargaItem) => soma + (Number(cargaItem.quantidade) || 0),
+        0
+      );
+
+    // Quantidade produzida do pedido correspondente
+    const produzido = Number(
+      pedidoItemAtual?.quantidadeProduzida ??
+      pedidoItemSeparacao?.quantidadeProduzida ??
+      pedidoItemFinalizado?.quantidadeProduzida ??
+      0
+    ) || 0;
+
+    const falta = Math.max(0, pedida - reservado - produzido);
+
+    const isCarregado = item.carregado || item.finalizado;
+
+    // Status
+    const statusClass = falta === 0
+      ? 'completo'
+      : (isCarregado ? 'pronto' : 'falta');
+
+    // Identificação do pedido
+    const badgePed = codigoPedido
+      ? `<span style="background:var(--info,#3b82f6);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;">
+           📋 ${codigoPedido}
+         </span>`
+      : `<span style="background:#64748b;color:white;font-size:10px;padding:2px 6px;border-radius:10px;">
+           Avulso
+         </span>`;
+
+    const badgeCarregado = isCarregado
+      ? `<span style="background:var(--success,#10b981);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;margin-left:4px;">
+           ✅ Pronto
+         </span>`
+      : '';
+
+    // Localização
+    const nomePrateleira =
+      state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
+
+    const loc = item.prateleira && item.posicao
+      ? `📍 ${nomePrateleira}${item.posicao}`
+      : '📍 Sem local';
+
+    const borderColor = isCarregado
+      ? 'var(--success,#10b981)'
+      : (falta > 0 ? 'var(--danger,#ef4444)' : 'var(--accent,#f59e0b)');
+
+    const borderLeft = `5px solid ${borderColor}`;
+    const borderTop = `1px solid ${isCarregado ? 'var(--success,#10b981)' : 'var(--border)'}`;
+
+    // Renderização do card
+    html += `
+      <div class="carga-card ${statusClass}"
+           style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;border:${borderTop};border-left:${borderLeft};background:var(--bg-card,#fff);box-shadow:0 2px 6px rgba(0,0,0,0.06);cursor:pointer;"
+           onclick="abrirDetalhesDaCarga('${item.uid}')"
+           title="Clique para ver o pedido">
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap;">
+          <div>
+            ${badgePed}
+            ${badgeCarregado}
           </div>
 
-          <!-- Nome do produto -->
-          <strong style="font-size:14px;color:var(--text);line-height:1.3;">${produto.nome}</strong>
+          <button class="btn btn-xs btn-danger"
+                  onclick="event.stopPropagation(); removerDaCarga('${item.uid}')"
+                  title="Remover item">
+            🗑️
+          </button>
+        </div>
 
-          <!-- Localização -->
-          <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+        <strong style="font-size:14px;color:var(--text);line-height:1.3;">
+          ${produto.nome}
+        </strong>
 
-          <!-- Métricas: Pedida | Reservado | Produzido | Falta -->
-          <div class="carga-card-metrics">
-            <div class="carga-metric-box">
-              <div class="carga-metric-label">Pedida</div>
-              <div class="carga-metric-val">${pedida}</div>
-            </div>
-            <div class="carga-metric-box reservado">
-              <div class="carga-metric-label">Reservado</div>
-              <div class="carga-metric-val">${reservado}</div>
-            </div>
-            <div class="carga-metric-box produzido">
-              <div class="carga-metric-label">Produzido</div>
-              <div class="carga-metric-val">${produzido}</div>
-            </div>
-            <div class="carga-metric-box ${falta === 0 ? 'completo' : 'falta'}">
-              <div class="carga-metric-label">Falta</div>
-              <div class="carga-metric-val">${falta}</div>
-            </div>
+        <div style="font-size:12px;color:var(--text-muted);">
+          ${loc}
+        </div>
+
+        <div class="carga-card-metrics">
+
+          <div class="carga-metric-box">
+            <div class="carga-metric-label">Pedida</div>
+            <div class="carga-metric-val">${pedida}</div>
           </div>
 
-          <!-- Rodapé -->
-          <div style="font-size:11px;color:var(--info,#3b82f6);text-align:right;">👆 Ver pedido</div>
-        </div>`;
-    }
+          <div class="carga-metric-box reservado">
+            <div class="carga-metric-label">Reservado</div>
+            <div class="carga-metric-val">${reservado}</div>
+          </div>
+
+          <div class="carga-metric-box produzido">
+            <div class="carga-metric-label">Produzido</div>
+            <div class="carga-metric-val">${produzido}</div>
+          </div>
+
+          <div class="carga-metric-box ${falta === 0 ? 'completo' : 'falta'}">
+            <div class="carga-metric-label">Falta</div>
+            <div class="carga-metric-val">${falta}</div>
+          </div>
+
+        </div>
+
+        <div style="font-size:11px;color:var(--info,#3b82f6);text-align:right;">
+          👆 Ver pedido
+        </div>
+
+      </div>`;
   });
 
   c.innerHTML = html;
+
   const elP = document.getElementById('totalCargaProdutos');
   const elI = document.getElementById('totalCargaItens');
-  if (elP) elP.textContent = state.carga.length;
+
+  if (elP) elP.textContent = totalCards;
   if (elI) elI.textContent = total;
 }
+
 
 function abrirDetalhesDaCarga(uid) {
   const item = state.carga.find(c => c.uid === uid);
