@@ -2282,127 +2282,138 @@ function finalizarCarga() {
 
 
 
+
 function carregarCarga() {
   console.log('[CARGA] Iniciando carregarCarga()');
 
   try {
     const c = document.getElementById('cargaContainer');
-
     if (!c) {
-      console.error('[CARGA] ERRO: elemento cargaContainer não encontrado.');
+      console.error('[CARGA] Container não encontrado');
       return;
     }
 
-    console.log('[CARGA] Container encontrado:', c);
+    if (!Array.isArray(state.carga)) {
+      console.error('[CARGA] state.carga inválido');
+      return;
+    }
 
-    console.log('[CARGA] Estado:', {
-      stateExiste: typeof state !== 'undefined',
-      cargaArray: Array.isArray(state?.carga),
-      totalReservas: state?.carga?.length,
-      totalProdutos: state?.produtos?.length
-    });
+    const produtosValidos = state.carga.filter(item =>
+      state.produtos.some(p => p.id === item.id)
+    );
+
+    const total = produtosValidos.reduce(
+      (soma, item) => soma + (Number(item.quantidade) || 0),
+      0
+    );
 
     let html = `
       <div class="controls">
         <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
         <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
         <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
-      </div>`;
+      </div>
+      <div id="cargaTabelaHorizontal" style="width:100%;overflow-x:auto;">
+    `;
 
-    let total = 0;
-    let quantidadeRenderizada = 0;
+    const itensPedido = state.pedidoCargaAtual?.itens || {};
+    const lista = Object.values(itensPedido);
 
-    if (!Array.isArray(state.carga)) {
-      console.error('[CARGA] ERRO: state.carga não é um array.');
-      return;
+    if (lista.length > 0) {
+      html += `
+        <table class="tabela-carga">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Pedida</th>
+              <th>Reservado</th>
+              <th>Produzido</th>
+              <th>Falta</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      lista.forEach(item => {
+        const reservado = getReservadoCargaAtual(item.produtoId);
+        const produzido = item.quantidadeProduzida || 0;
+        const falta = getFaltaCargaAtual(item);
+        const completo = falta <= 0;
+        const rowClass = completo ? 'completo' : (falta <= 5 ? 'pendente' : '');
+
+        html += `
+          <tr class="${rowClass}">
+            <td><strong>${item.nome}</strong>${completo ? ' ✅' : ''}</td>
+            <td>${item.quantidadePedida}</td>
+            <td class="valor-reservado">${reservado}</td>
+            <td class="valor-produzido">${produzido}</td>
+            <td class="${completo ? 'valor-completo' : 'valor-falta'}">
+              ${completo ? '0 ✅' : falta}
+            </td>
+            <td>
+              ${!completo ? `<button class="btn btn-xs btn-warning" onclick="registrarProducaoCarga('${item.produtoId}')">🏭 Produzir</button>` : ''}
+              <button class="btn btn-xs btn-info" onclick="editarQuantidadeCarga('${item.produtoId}')">✏️</button>
+              <button class="btn btn-xs btn-danger" onclick="removerProdutoPedidoCarga('${item.produtoId}')">🗑️</button>
+            </td>
+          </tr>`;
+      });
+
+      html += '</tbody></table>';
+    } else if (produtosValidos.length === 0) {
+      html += `
+        <div style="text-align:center;padding:30px;color:var(--text-muted);">
+          🚛 Nenhuma reserva na carga.
+        </div>`;
+    } else {
+      // Preserva a visualização de reservas antigas que não pertencem
+      // a um pedido de carga estruturado.
+      html += '<div style="padding:10px;">';
+
+      produtosValidos.forEach(item => {
+        const produto = state.produtos.find(p => p.id === item.id);
+        const prateleira = state.prateleiras.find(
+          s => s.id === item.prateleira
+        );
+        const local = item.prateleira && item.posicao
+          ? `📍 ${prateleira?.nome || '?'}${item.posicao}`
+          : '📍 Sem local';
+
+        html += `
+          <div class="carga-card" style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;">
+            <div>
+              <strong>${produto.nome}</strong> - ${item.quantidade} cx
+              <div style="font-size:12px;color:var(--text-muted);">${local}</div>
+            </div>
+            <button class="btn btn-xs btn-danger"
+              onclick="removerDaCarga('${item.uid}')">🗑️</button>
+          </div>`;
+      });
+
+      html += '</div>';
     }
 
-    state.carga.forEach(item => {
-      const produto = state.produtos.find(p => p.id === item.id);
-
-      if (!produto) {
-        console.warn('[CARGA] Produto não encontrado:', item);
-        return;
-      }
-
-      total += Number(item.quantidade) || 0;
-      quantidadeRenderizada++;
-
-      const prateleira = state.prateleiras.find(
-        s => s.id === item.prateleira
-      );
-
-      const nome = prateleira?.nome || '?';
-
-      const loc = item.prateleira && item.posicao
-        ? `📍 ${nome}${item.posicao}`
-        : '📍 Sem local';
-
-      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
-      const badgeStyle = isCarga
-        ? 'background:var(--accent);'
-        : 'background:var(--info);';
-
-      const ped = item.pedidoCodigo
-        ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>`
-        : '';
-
-      html += `
-      <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
-          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
-          <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
-      </div>
-          }
-          });
-          c.innerHTML = html;
-          document.getElementById('totalCargaProdutos').textContent = state.carga.length;
-          document.getElementById('totalCargaItens').textContent = total;
-        }
-
-        <div class="tabela-carga"
-             onclick="abrirDetalhesDaCarga('${item.uid}')"
-             title="Clique para ver o pedido associado"
-             style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;cursor:pointer;">
-          <div>
-            <strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
-            <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
-            <small style="color:var(--info);">👆 Clique para ver o pedido</small>
-          </div>
-          <button class="btn btn-xs btn-danger"
-                  onclick="event.stopPropagation();removerDaCarga('${item.uid}')">
-            🗑️
-          </button>
-        </div>`;
-    });
-
+    html += '</div>';
     c.innerHTML = html;
 
     const elProdutos = document.getElementById('totalCargaProdutos');
     const elItens = document.getElementById('totalCargaItens');
 
-    if (elProdutos) {
-      elProdutos.textContent = state.carga.filter(item =>
-        state.produtos.some(p => p.id === item.id)
-      ).length;
-    }
+    if (elProdutos) elProdutos.textContent = produtosValidos.length;
+    if (elItens) elItens.textContent = total;
 
-    if (elItens) {
-      elItens.textContent = total;
-    }
-
-    console.log('[CARGA] Renderização concluída:', {
-      reservasNoEstado: state.carga.length,
-      produtosRenderizados: quantidadeRenderizada,
-      totalItens: total,
-      htmlGerado: c.innerHTML.length,
-      containerVisivel: c.offsetParent !== null
+    console.log('[CARGA] Renderização concluída', {
+      reservas: produtosValidos.length,
+      itensPedido: lista.length,
+      total,
+      tabela: !!c.querySelector('#cargaTabelaHorizontal table')
     });
 
   } catch (erro) {
-    console.error('[CARGA] ERRO durante a execução:', erro);
-    console.error('[CARGA] Stack:', erro.stack);
+    console.error('[CARGA] ERRO:', erro);
+    console.error(erro.stack);
   }
 }
+
 
 function abrirDetalhesDaCarga(uid) {
   const item = state.carga.find(c => c.uid === uid);
