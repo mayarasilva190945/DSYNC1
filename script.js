@@ -700,11 +700,13 @@ function agendarSalvamentoNuvem() {
 async function carregarDaNuvem() {
   if (!window.supabase || !usuarioSupabase) return;
   dadosCompartilhadosCarregados = false;
-  const { data: registro, error } = await window.supabase
-    .from('dsync_compartilhado')
-    .select('data')
-    .eq('id', 1)
-    .maybeSingle();
+  const { error } = await window.supabase
+  .from('dsync_compartilhado')
+  .upsert({
+    id: 1,
+    data: dados,
+    updated_at: new Date().toISOString()
+  });
 
   if (error) {
     console.error('Erro ao carregar dados compartilhados:', error);
@@ -713,8 +715,9 @@ async function carregarDaNuvem() {
   }
 
   if (!registro || !registro.data) {
-    console.log('Nenhum dado compartilhado encontrado.');
-    return;
+  console.log('Nenhum dado compartilhado encontrado.');
+  dadosCompartilhadosCarregados = true;
+  return;
   }
 
   const dados = registro.data;
@@ -2280,65 +2283,45 @@ function finalizarCarga() {
   mostrarToast('🚛 Carga finalizada!', 'success');
 }
 
-
 function carregarCarga() {
   const c = document.getElementById('cargaContainer');
   if (!c) return;
-
   let html = `
     <div class="controls">
       <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
       <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
       <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
     </div>`;
-
   if (state.carga.length === 0) {
-    html += `
-      <div style="text-align:center;padding:40px;color:var(--text-muted);">
-        🚛 Nenhuma reserva.
-      </div>`;
+    html += '<div style="text-align:center;padding:40px;color:var(--text-muted);">🚛 Nenhuma reserva.</div>';
     c.innerHTML = html;
     document.getElementById('totalCargaProdutos').textContent = '0';
     document.getElementById('totalCargaItens').textContent = '0';
     return;
   }
-
   let total = 0;
-
   state.carga.forEach(item => {
     const produto = state.produtos.find(p => p.id === item.id);
-
     if (produto) {
       total += item.quantidade;
-
-      const nome = state.prateleiras.find(
-        s => s.id === item.prateleira
-      )?.nome || '?';
-
-      const loc = item.prateleira && item.posicao
-        ? `📍 ${nome}${item.posicao}`
-        : '📍 Sem local';
-
+      const nome = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
+      const loc = item.prateleira && item.posicao ? `📍 ${nome}${item.posicao}` : '📍 Sem local';
+      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
+      const badgeStyle = isCarga ? 'background:var(--accent);' : 'background:var(--info);';
+      const ped = item.pedidoCodigo ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>` : '';
       html += `
         <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
-          <div>
-            <strong>${produto.nome}</strong> - ${item.quantidade} cx
+          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
             <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
           </div>
-          <button class="btn btn-xs btn-danger"
-            onclick="removerDaCarga('${item.uid}')">🗑️</button>
+          <button class="btn btn-xs btn-danger" onclick="removerDaCarga('${item.uid}')">🗑️</button>
         </div>`;
     }
   });
-
   c.innerHTML = html;
-
-  document.getElementById('totalCargaProdutos').textContent =
-    state.carga.filter(item => state.produtos.some(p => p.id === item.id)).length;
-
+  document.getElementById('totalCargaProdutos').textContent = state.carga.length;
   document.getElementById('totalCargaItens').textContent = total;
 }
-
 
 // ===== LEITOR DE PEDIDOS =====
 function extrairCodigoEQuantidade(valorBruto) {
