@@ -243,7 +243,9 @@ function carregarPedidoCarga() {
 }
 
 function getReservadoCargaAtual(pid) {
-  return state.carga.filter(c => c.id === pid && c.pedidoCodigo === CARGA_PEDIDO_TAG)
+  const cod = state.pedidoCargaAtual?.codigo;
+  return state.carga
+    .filter(c => c.id === pid && (c.pedidoCodigo === CARGA_PEDIDO_TAG || (cod && c.pedidoCodigo === cod)))
     .reduce((a, c) => a + c.quantidade, 0);
 }
 
@@ -264,10 +266,11 @@ function tentarAutoReservarCarga(pid, shelfId, posicao, quantidadeAdicionada) {
   if (falta <= 0) return 0;
   const reservar = Math.min(quantidadeAdicionada, falta);
   if (reservar <= 0) return 0;
+  const cod = state.pedidoCargaAtual.codigo || CARGA_PEDIDO_TAG;
   state.carga.push({
     uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
     id: pid, quantidade: reservar, prateleira: shelfId,
-    posicao: posicao.toString(), pedidoCodigo: CARGA_PEDIDO_TAG
+    posicao: posicao.toString(), pedidoCodigo: cod
   });
   return reservar;
 }
@@ -397,6 +400,7 @@ function carregarDados() {
   });
 
   state.carga = state.carga.map(item => ({
+    ...item,
     uid: item.uid || ('c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
     id: item.id, quantidade: item.quantidade || 0,
     prateleira: item.prateleira || null, posicao: item.posicao || null,
@@ -2257,45 +2261,58 @@ function removerDaCarga(uid) {
 
 function finalizarCarga() {
   if (state.carga.length === 0) { mostrarToast('📭 Nada para finalizar!', 'info'); return; }
-  if (!confirm('⚠️ Finalizar carga? Isso remove as quantidades das prateleiras.')) return;
+  if (!confirm('⚠️ Finalizar carga? As quantidades serão baixadas das prateleiras e os cards permanecerão visíveis até a finalização do pedido.')) return;
   salvarEstadoParaUndo();
+
+  let baixados = 0;
   state.carga.forEach(item => {
-    const s = state.prateleiras.find(x => x.id === item.prateleira);
-    if (s) {
-      const idx = s.produtos.findIndex(p => p.id === item.id && p.posicao === item.posicao);
-      if (idx !== -1) {
-        s.produtos[idx].quantidade -= item.quantidade;
-        if (s.produtos[idx].quantidade <= 0) s.produtos.splice(idx, 1);
+    if (!item.baixado && item.prateleira && item.posicao) {
+      const s = state.prateleiras.find(x => x.id === item.prateleira);
+      if (s) {
+        const idx = s.produtos.findIndex(p => p.id === item.id && p.posicao === item.posicao);
+        if (idx !== -1) {
+          s.produtos[idx].quantidade -= item.quantidade;
+          if (s.produtos[idx].quantidade <= 0) s.produtos.splice(idx, 1);
+        }
       }
+      const produto = state.produtos.find(p => p.id === item.id);
+      if (produto) produto.quantidade = Math.max(0, (produto.quantidade || 0) - item.quantidade);
+      registrarHistorico(produto?.nome || 'Produto', 'Carga Finalizada', item.quantidade, `${item.prateleira}${item.posicao}`);
+      item.baixado = true;
+      baixados++;
     }
-    const produto = state.produtos.find(p => p.id === item.id);
-    if (produto) produto.quantidade = Math.max(0, (produto.quantidade || 0) - item.quantidade);
-    registrarHistorico(produto?.nome || 'Produto', 'Carga Finalizada', item.quantidade, `${item.prateleira}${item.posicao}`);
+    item.carregado = true;
+    item.finalizado = true;
   });
-  state.carga = [];
+
+  // NÃO apaga state.carga! O card permanece na tela e só será removido ao finalizar o pedido.
   setData(STORAGE_KEYS.prateleiras, state.prateleiras);
   setData(STORAGE_KEYS.produtos, state.produtos);
   setData(STORAGE_KEYS.carga, state.carga);
   atualizarTudo();
-  mostrarToast('🚛 Carga finalizada!', 'success');
+  mostrarToast('🚛 Carga finalizada! Os cards continuam visíveis até o pedido ser finalizado.', 'success');
 }
 
 function carregarCarga() {
   const c = document.getElementById('cargaContainer');
   if (!c) return;
   let html = `
-    <div class="controls">
+    <div class="controls" style="grid-column: 1 / -1; width: 100%; display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
       <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
       <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
       <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
     </div>`;
-  if (state.carga.length === 0) {
-    html += '<div style="text-align:center;padding:40px;color:var(--text-muted);">🚛 Nenhuma reserva.</div>';
+
+  if (!Array.isArray(state.carga) || state.carga.length === 0) {
+    html += '<div style="grid-column: 1 / -1; text-align:center; padding:40px; color:var(--text-muted);">🚛 Nenhuma reserva na carga.</div>';
     c.innerHTML = html;
-    document.getElementById('totalCargaProdutos').textContent = '0';
-    document.getElementById('totalCargaItens').textContent = '0';
+    const elP = document.getElementById('totalCargaProdutos');
+    const elI = document.getElementById('totalCargaItens');
+    if (elP) elP.textContent = '0';
+    if (elI) elI.textContent = '0';
     return;
   }
+
   let total = 0;
   state.carga.forEach(item => {
     const produto = state.produtos.find(p => p.id === item.id);
@@ -2303,21 +2320,100 @@ function carregarCarga() {
       total += item.quantidade;
       const nome = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
       const loc = item.prateleira && item.posicao ? `📍 ${nome}${item.posicao}` : '📍 Sem local';
-      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
-      const badgeStyle = isCarga ? 'background:var(--accent);' : 'background:var(--info);';
-      const ped = item.pedidoCodigo ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>` : '';
+      const isCarregado = item.carregado || item.finalizado;
+      const badgeCarregado = isCarregado ? `<span style="background:var(--success, #10b981); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600; margin-left:4px;">✅ Pronto</span>` : '';
+      const ped = item.pedidoCodigo ? `<span style="background:var(--info, #3b82f6); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">📋 ${item.pedidoCodigo}</span>` : '<span style="background:#64748b; color:white; font-size:10px; padding:2px 6px; border-radius:10px;">Avulso</span>';
+
       html += `
-        <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
-          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
-            <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+        <div class="carga-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:14px; border-radius:12px; border:1px solid ${isCarregado ? 'var(--success, #10b981)' : 'var(--border)'}; border-left:5px solid ${isCarregado ? 'var(--success, #10b981)' : 'var(--accent, #f59e0b)'}; background:var(--bg-card, #fff); box-shadow:0 2px 6px rgba(0,0,0,0.06); cursor:pointer;"
+             onclick="abrirDetalhesDaCarga('${item.uid}')" title="Clique para ver o pedido">
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:4px; flex-wrap:wrap;">
+              <div>${ped}${badgeCarregado}</div>
+              <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); removerDaCarga('${item.uid}')" title="Remover item">🗑️</button>
+            </div>
+            <strong style="font-size:15px; color:var(--text); display:block; margin-bottom:4px;">${produto.nome}</strong>
+            <div style="font-size:22px; font-weight:bold; color:var(--primary, #1a2b4c); margin-bottom:6px;">${item.quantidade} <span style="font-size:13px; font-weight:normal; color:var(--text-muted);">cx</span></div>
+            <div style="font-size:12px; color:var(--text-muted);">${loc}</div>
           </div>
-          <button class="btn btn-xs btn-danger" onclick="removerDaCarga('${item.uid}')">🗑️</button>
+          <div style="margin-top:10px; font-size:11px; color:var(--info, #3b82f6); text-align:right;">
+            👆 Ver pedido
+          </div>
         </div>`;
     }
   });
+
   c.innerHTML = html;
-  document.getElementById('totalCargaProdutos').textContent = state.carga.length;
-  document.getElementById('totalCargaItens').textContent = total;
+  const elP = document.getElementById('totalCargaProdutos');
+  const elI = document.getElementById('totalCargaItens');
+  if (elP) elP.textContent = state.carga.length;
+  if (elI) elI.textContent = total;
+}
+
+function abrirDetalhesDaCarga(uid) {
+  const item = state.carga.find(c => c.uid === uid);
+  if (!item) {
+    mostrarToast('❌ Item de carga não encontrado!', 'error');
+    return;
+  }
+  if (item.pedidoCodigo) {
+    const ped = state.pedidosSeparar.find(p => p.codigo === item.pedidoCodigo);
+    if (ped) {
+      selecionarPedidoExistenteParaCarga(ped.codigo);
+      return;
+    }
+    const finalizado = state.pedidosFinalizados.find(p => p.codigo === item.pedidoCodigo);
+    if (finalizado) {
+      switchTab('pedidos');
+      mostrarSubAba('finalizado');
+      return;
+    }
+  }
+  mostrarToast(`ℹ️ Reserva avulsa: ${item.quantidade} cx`, 'info');
+}
+
+function exportarCargaPDF() {
+  if (!state.carga || state.carga.length === 0) {
+    mostrarToast('📭 Nenhuma carga para exportar!', 'info');
+    return;
+  }
+  try {
+    if (window.jspdf && window.jspdf.jsPDF) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('D.Sync - Relatório de Carga', 14, 18);
+      doc.setFontSize(10);
+      doc.text(`Data: ${new Date().toLocaleString()}`, 14, 25);
+
+      const rows = state.carga.map(item => {
+        const prod = state.produtos.find(p => p.id === item.id);
+        const s = state.prateleiras.find(x => x.id === item.prateleira);
+        const loc = item.prateleira && item.posicao ? `${s?.nome || '?'}${item.posicao}` : 'Sem local';
+        const ped = item.pedidoCodigo || 'Avulso';
+        const status = item.carregado || item.finalizado ? 'Carga Pronta' : 'Pendente';
+        return [prod?.nome || 'Produto', `${item.quantidade} cx`, loc, ped, status];
+      });
+
+      if (typeof doc.autoTable === 'function') {
+        doc.autoTable({
+          startY: 30,
+          head: [['Produto', 'Quantidade', 'Localização', 'Pedido', 'Status']],
+          body: rows,
+          theme: 'striped',
+          headStyles: { fillColor: [26, 43, 76] }
+        });
+      }
+
+      doc.save(`relatorio_carga_${new Date().toISOString().split('T')[0]}.pdf`);
+      mostrarToast('📄 PDF exportado com sucesso!', 'success');
+    } else {
+      exportarPedidoCarga();
+    }
+  } catch (err) {
+    console.error('Erro ao gerar PDF da carga:', err);
+    exportarPedidoCarga();
+  }
 }
 
 // ===== LEITOR DE PEDIDOS =====
@@ -3210,7 +3306,7 @@ function mostrarSubAba(subAba) {
   else if (subAba === 'pedidonovo') atualizarPedidoNovo();
   else if (subAba === 'separar') atualizarListasPedidos();
   else if (subAba === 'finalizado') atualizarListasPedidos();
-  else if (subAba === 'carga') { carregarPedidoCarga(); montarPedidoCarga(); }
+  else if (subAba === 'carga') { carregarPedidoCarga(); montarPedidoCarga(); carregarCarga(); }
   else if (subAba === 'injecao') renderizarInjecao();
   else if (subAba === 'injetar') renderizarInjetar();
   else if (subAba === 'injetando') renderizarInjetando();
@@ -3624,6 +3720,14 @@ function adicionarItemPedidoSeparacao() {
       pedidoCodigo: pedidoAtualEmEdicao.codigo
     });
   });
+  // Se faltou estoque nas prateleiras, adiciona na carga como "Sem local" para ficar registrado
+  if (resto > 0) {
+    state.carga.push({
+      uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: pid, quantidade: resto, prateleira: null, posicao: null,
+      pedidoCodigo: pedidoAtualEmEdicao.codigo
+    });
+  }
   if (!pedidoAtualEmEdicao.itens[pid]) {
     pedidoAtualEmEdicao.itens[pid] = { produtoId: pid, nome: produto.nome, codigoInterno: produto.codigoInterno || '', pacotes: 0, caixas: 0 };
   }
@@ -3635,7 +3739,7 @@ function adicionarItemPedidoSeparacao() {
   carregarPrateleiras();
   carregarCarga();
   atualizarDashboard();
-  if (resto > 0) mostrarToast(`⚠️ Faltam ${resto} cx de ${produto.nome}!`, 'warning');
+  if (resto > 0) mostrarToast(`⚠️ Faltam ${resto} cx de ${produto.nome}! Registrado na carga.`, 'warning');
   else mostrarToast(`✅ ${q} caixas adicionadas`, 'success');
 }
 
@@ -3660,29 +3764,43 @@ function _finalizarPedido(pedido) {
     const pid = item.produtoId;
     const reservas = state.carga.filter(c => c.id === pid && c.pedidoCodigo === pedido.codigo);
     reservas.forEach(r => {
-      const s = state.prateleiras.find(x => x.id === r.prateleira);
-      if (s) {
-        const idx = s.produtos.findIndex(p => p.id === pid && p.posicao === r.posicao);
-        if (idx !== -1) {
-          s.produtos[idx].quantidade -= r.quantidade;
-          if (s.produtos[idx].quantidade <= 0) s.produtos.splice(idx, 1);
+      // Baixa da prateleira apenas se ainda não foi baixado na finalização da carga
+      if (!r.baixado && r.prateleira && r.posicao) {
+        const s = state.prateleiras.find(x => x.id === r.prateleira);
+        if (s) {
+          const idx = s.produtos.findIndex(p => p.id === pid && p.posicao === r.posicao);
+          if (idx !== -1) {
+            s.produtos[idx].quantidade -= r.quantidade;
+            if (s.produtos[idx].quantidade <= 0) s.produtos.splice(idx, 1);
+          }
         }
+        const produto = state.produtos.find(p => p.id === pid);
+        if (produto) produto.quantidade = Math.max(0, (produto.quantidade || 0) - r.quantidade);
+        r.baixado = true;
       }
-      const produto = state.produtos.find(p => p.id === pid);
-      if (produto) produto.quantidade = Math.max(0, (produto.quantidade || 0) - r.quantidade);
     });
+    // Remove os itens deste pedido da carga (aqui sim o card é removido da carga)
     state.carga = state.carga.filter(c => !(c.id === pid && c.pedidoCodigo === pedido.codigo));
   });
+  // Garante a remoção de qualquer sobra vinculada a este pedido
+  state.carga = state.carga.filter(c => c.pedidoCodigo !== pedido.codigo);
+
   state.pedidosSeparar = state.pedidosSeparar.filter(p => p.codigo !== pedido.codigo);
   pedido.status = 'finalizado';
   pedido.dataFinalizacao = new Date().toLocaleString();
   state.pedidosFinalizados.push(pedido);
+
+  if (state.pedidoCargaAtual && state.pedidoCargaAtual.codigo === pedido.codigo) {
+    state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
+    salvarPedidoCarga();
+  }
+
   setData(STORAGE_KEYS.pedidosSeparar, state.pedidosSeparar);
   setData(STORAGE_KEYS.pedidosFinalizados, state.pedidosFinalizados);
   setData(STORAGE_KEYS.prateleiras, state.prateleiras);
   setData(STORAGE_KEYS.carga, state.carga);
   setData(STORAGE_KEYS.produtos, state.produtos);
-  registrarHistorico(`Pedido ${pedido.codigo}`, 'Pedido Finalizado', 0, `Itens: ${Object.values(pedido.itens).map(i => `${i.nome}: ${i.pacotes} cx`).join(', ')}`);
+  registrarHistorico(`Pedido ${pedido.codigo}`, 'Pedido Finalizado', 0, `Itens: ${Object.values(pedido.itens).map(i => `${i.nome}: ${i.pacotes || i.quantidadePedida || 0} cx`).join(', ')}`);
 }
 
 function finalizarPedidoSeparacao() {
@@ -3816,14 +3934,30 @@ function montarPedidoCarga() {
   carregarPedidoCarga();
   const c = document.getElementById('pedidoCargaContainer');
   if (!c) return;
+
+  const pedidosAbertos = state.pedidosSeparar || [];
+
   if (!state.pedidoCargaAtual.ativo) {
+    let optionsHtml = pedidosAbertos.map(p => {
+      const totalCx = Object.values(p.itens || {}).reduce((a, i) => a + (i.pacotes || i.quantidadePedida || i.caixas || 0), 0);
+      return `<option value="${p.codigo}">📋 ${p.codigo} (${totalCx} caixas)</option>`;
+    }).join('');
+
     c.innerHTML = `
       <div class="pedido-carga-wrap" style="text-align:center;">
         <h3 style="color:var(--text);">🚛 Montar Pedido de Carga</h3>
-        <p style="color:var(--text-muted);margin:15px 0;">Nenhum pedido de carga ativo.</p>
-        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:15px;">
-          <input type="text" id="codigoCargaInput" placeholder="Código do Pedido (ex: CARGA-001)" style="min-width:250px;padding:12px 15px;border:2px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);">
-          <button class="btn btn-lg btn-success" onclick="criarPedidoCarga()">➕ Criar Pedido de Carga</button>
+        <p style="color:var(--text-muted);margin:10px 0;">Selecione um pedido existente para gerenciar na carga ou inicie um novo pedido.</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:15px;align-items:center;">
+          ${pedidosAbertos.length > 0 ? `
+            <select id="selectPedidoExistenteCarga" style="min-width:220px;padding:12px;border:2px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);">
+              <option value="">-- Escolher Pedido Pendente --</option>
+              ${optionsHtml}
+            </select>
+            <button class="btn btn-lg btn-primary" onclick="selecionarPedidoExistenteParaCarga()">📂 Abrir Pedido na Carga</button>
+            <span style="color:var(--text-muted);font-weight:bold;">OU</span>
+          ` : ''}
+          <input type="text" id="codigoCargaInput" placeholder="Código do Pedido (ex: CARGA-001)" style="min-width:220px;padding:12px 15px;border:2px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);">
+          <button class="btn btn-lg btn-success" onclick="criarPedidoCarga()">➕ Criar Novo</button>
         </div>
       </div>`;
   } else {
@@ -3831,11 +3965,58 @@ function montarPedidoCarga() {
   }
 }
 
+function selecionarPedidoExistenteParaCarga(codigo) {
+  const cod = codigo || document.getElementById('selectPedidoExistenteCarga')?.value;
+  if (!cod) { mostrarToast('❌ Selecione um pedido!', 'error'); return; }
+  const p = state.pedidosSeparar.find(x => x.codigo === cod);
+  if (!p) { mostrarToast('❌ Pedido não encontrado!', 'error'); return; }
+
+  const itens = {};
+  Object.values(p.itens || {}).forEach(it => {
+    itens[it.produtoId] = {
+      produtoId: it.produtoId,
+      nome: it.nome,
+      codigoInterno: it.codigoInterno || '',
+      quantidadePedida: it.pacotes || it.quantidadePedida || it.caixas || 0,
+      quantidadeProduzida: it.quantidadeProduzida || 0
+    };
+  });
+
+  state.pedidoCargaAtual = {
+    ativo: true,
+    codigo: p.codigo,
+    itens: itens
+  };
+  salvarPedidoCarga();
+  renderizarCargaAtiva();
+  carregarCarga();
+  mostrarToast(`📋 Pedido ${p.codigo} selecionado na área de Carga!`, 'info');
+}
+
+function fecharVisualizacaoPedidoCarga() {
+  state.pedidoCargaAtual.ativo = false;
+  salvarPedidoCarga();
+  montarPedidoCarga();
+}
+
 function criarPedidoCarga() {
   const codigo = (document.getElementById('codigoCargaInput')?.value || '').trim() || ('CARGA-' + Date.now().toString().slice(-4));
   state.pedidoCargaAtual = { ativo: true, codigo, itens: {} };
+
+  if (!state.pedidosSeparar.some(p => p.codigo === codigo)) {
+    state.pedidosSeparar.push({
+      codigo: codigo,
+      itens: {},
+      dataCriacao: new Date().toLocaleString(),
+      status: 'separar'
+    });
+    setData(STORAGE_KEYS.pedidosSeparar, state.pedidosSeparar);
+    atualizarListasPedidos();
+  }
+
   salvarPedidoCarga();
   atualizarPedidoCarga();
+  carregarCarga();
   mostrarToast(`✅ Pedido ${codigo} criado!`, 'success');
 }
 
@@ -3847,10 +4028,13 @@ function renderizarCargaAtiva() {
   c.innerHTML = `
     <div class="pedido-carga-wrap">
       <div class="pedido-carga-header">
-        <h3>🚛 Pedido de Carga: <span class="pedido-carga-codigo">${state.pedidoCargaAtual.codigo}</span></h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;">🚛 Pedido de Carga: <span class="pedido-carga-codigo">${state.pedidoCargaAtual.codigo}</span></h3>
+          <button class="btn btn-xs btn-outline" onclick="fecharVisualizacaoPedidoCarga()" style="cursor:pointer;" title="Alternar para outro pedido">🔄 Trocar Pedido</button>
+        </div>
         <div class="pedido-carga-actions">
           <button class="btn btn-md btn-success" onclick="finalizarPedidoCargaCompleto()">✅ Finalizar Pedido</button>
-          <button class="btn btn-md btn-danger" onclick="cancelarPedidoCarga()">🗑️ Cancelar</button>
+          <button class="btn btn-md btn-danger" onclick="cancelarPedidoCarga()">🗑️ Fechar</button>
         </div>
       </div>
       <div class="pedido-carga-add">
@@ -3927,8 +4111,12 @@ function adicionarProdutoPedidoCarga() {
   if (!pid || !q || q <= 0) { mostrarToast('❌ Selecione produto e quantidade!', 'error'); return; }
   const produto = state.produtos.find(p => p.id === pid);
   if (!produto) return;
-  if (!state.pedidoCargaAtual.ativo) { mostrarToast('❌ Crie um pedido primeiro!', 'error'); return; }
+  if (!state.pedidoCargaAtual.ativo) { mostrarToast('❌ Crie ou abra um pedido primeiro!', 'error'); return; }
   salvarEstadoParaUndo();
+
+  const cod = state.pedidoCargaAtual.codigo;
+
+  // 1. Atualiza no pedido de carga
   if (state.pedidoCargaAtual.itens[pid]) {
     state.pedidoCargaAtual.itens[pid].quantidadePedida += q;
   } else {
@@ -3937,46 +4125,96 @@ function adicionarProdutoPedidoCarga() {
       quantidadePedida: q, quantidadeProduzida: 0
     };
   }
-  const item = state.pedidoCargaAtual.itens[pid];
-  const falta = getFaltaCargaAtual(item);
-  let restante = falta;
+
+  // 2. Sincroniza com pedidosSeparar para compilar na sub-aba separar
+  let pedSeparar = state.pedidosSeparar.find(p => p.codigo === cod);
+  if (!pedSeparar) {
+    pedSeparar = {
+      codigo: cod,
+      itens: {},
+      dataCriacao: new Date().toLocaleString(),
+      status: 'separar'
+    };
+    state.pedidosSeparar.push(pedSeparar);
+  }
+  if (!pedSeparar.itens[pid]) {
+    pedSeparar.itens[pid] = {
+      produtoId: pid, nome: produto.nome, codigoInterno: produto.codigoInterno || '',
+      pacotes: 0, caixas: 0
+    };
+  }
+  pedSeparar.itens[pid].pacotes = (pedSeparar.itens[pid].pacotes || 0) + q;
+  pedSeparar.itens[pid].caixas = (pedSeparar.itens[pid].caixas || 0) + q;
+  setData(STORAGE_KEYS.pedidosSeparar, state.pedidosSeparar);
+
+  if (pedidoAtualEmEdicao && pedidoAtualEmEdicao.codigo === cod) {
+    pedidoAtualEmEdicao = pedSeparar;
+  }
+
+  // 3. Reserva itens das prateleiras e adiciona na carga
+  let restante = q;
+  const disp = buscarDisponibilidadeProduto(pid);
+  disp.locais.forEach(l => {
+    if (restante <= 0) return;
+    const qr = Math.min(restante, l.disponivel);
+    if (qr > 0) {
+      state.carga.push({
+        uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        id: pid, quantidade: qr, prateleira: l.prateleiraId, posicao: l.posicao,
+        pedidoCodigo: cod
+      });
+      restante -= qr;
+    }
+  });
+
+  // Se faltou estoque na prateleira, registra na carga como "Sem local"
+  // para que o card apareça na parte de baixo da mesma área!
   if (restante > 0) {
-    const disp = buscarDisponibilidadeProduto(pid);
-    disp.locais.forEach(l => {
-      if (restante <= 0) return;
-      const qr = Math.min(restante, l.disponivel);
-      if (qr > 0) {
-        state.carga.push({
-          uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-          id: pid, quantidade: qr, prateleira: l.prateleiraId, posicao: l.posicao,
-          pedidoCodigo: CARGA_PEDIDO_TAG
-        });
-        restante -= qr;
-      }
+    state.carga.push({
+      uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: pid, quantidade: restante, prateleira: null, posicao: null,
+      pedidoCodigo: cod
     });
   }
-  saveData(); salvarPedidoCarga();
+
+  saveData();
+  salvarPedidoCarga();
   setData(STORAGE_KEYS.carga, state.carga);
   atualizarPedidoCarga();
   carregarPrateleiras();
   carregarCarga();
+  atualizarPedidoNovo();
+  atualizarListasPedidos();
   atualizarDashboard();
-  const reservado = getReservadoCargaAtual(pid);
-  const produzir = Math.max(0, item.quantidadePedida - reservado - (item.quantidadeProduzida || 0));
-  if (produzir > 0) mostrarToast(`✅ Adicionado! Reservado: ${reservado} · Falta produzir: ${produzir}`, 'success');
-  else mostrarToast('✅ Adicionado e completamente reservado!', 'success');
+
+  const reservado = q - restante;
+  if (restante > 0) {
+    mostrarToast(`✅ ${q} cx adicionadas! (${reservado} reservadas, ${restante} sem local/produzir)`, 'warning');
+  } else {
+    mostrarToast(`✅ ${q} caixas adicionadas e reservadas com sucesso!`, 'success');
+  }
 }
 
 function removerProdutoPedidoCarga(produtoId) {
   if (!state.pedidoCargaAtual.itens[produtoId]) return;
   salvarEstadoParaUndo();
-  state.carga = state.carga.filter(c => !(c.id === produtoId && c.pedidoCodigo === CARGA_PEDIDO_TAG));
+  const cod = state.pedidoCargaAtual.codigo;
+  state.carga = state.carga.filter(c => !(c.id === produtoId && (c.pedidoCodigo === cod || c.pedidoCodigo === CARGA_PEDIDO_TAG)));
   delete state.pedidoCargaAtual.itens[produtoId];
+
+  const ped = state.pedidosSeparar.find(p => p.codigo === cod);
+  if (ped && ped.itens[produtoId]) {
+    delete ped.itens[produtoId];
+    setData(STORAGE_KEYS.pedidosSeparar, state.pedidosSeparar);
+  }
+
   setData(STORAGE_KEYS.carga, state.carga);
   salvarPedidoCarga();
   atualizarPedidoCarga();
   carregarPrateleiras();
   carregarCarga();
+  atualizarPedidoNovo();
+  atualizarListasPedidos();
   atualizarDashboard();
   mostrarToast('🗑️ Removido!', 'warning');
 }
@@ -4054,55 +4292,53 @@ function finalizarPedidoCargaCompleto() {
   if (incompletos.length > 0) {
     const msg = `⚠️ Existem ${incompletos.length} item(ns) com falta:\n\n` +
       incompletos.map(i => `• ${i.nome}: falta ${getFaltaCargaAtual(i)} cx`).join('\n') +
-      `\n\nFinalizar mesmo assim? (as reservas serão baixadas das prateleiras)`;
+      `\n\nFinalizar o pedido mesmo assim? O pedido será arquivado em Pedidos Finalizados.`;
     if (!confirm(msg)) return;
   } else {
-    if (!confirm('✅ Pedido completo! Finalizar agora?\n\nAs reservas serão baixadas das prateleiras.')) return;
+    if (!confirm('✅ Finalizar pedido agora?\n\nO pedido será arquivado em Pedidos Finalizados.')) return;
   }
   salvarEstadoParaUndo();
-  const reservas = state.carga.filter(c => c.pedidoCodigo === CARGA_PEDIDO_TAG);
-  reservas.forEach(item => {
-    const s = state.prateleiras.find(x => x.id === item.prateleira);
-    if (s) {
-      const idx = s.produtos.findIndex(p => p.id === item.id && p.posicao === item.posicao);
-      if (idx !== -1) {
-        s.produtos[idx].quantidade -= item.quantidade;
-        if (s.produtos[idx].quantidade <= 0) s.produtos.splice(idx, 1);
-      }
-    }
-    const produto = state.produtos.find(p => p.id === item.id);
-    if (produto) produto.quantidade = Math.max(0, (produto.quantidade || 0) - item.quantidade);
-  });
-  state.carga = state.carga.filter(c => c.pedidoCodigo !== CARGA_PEDIDO_TAG);
+
   const codigo = state.pedidoCargaAtual.codigo || 'CARGA';
-  const totalPedida = itens.reduce((a, i) => a + i.quantidadePedida, 0);
-  registrarHistorico(`Pedido ${codigo}`, 'Carga Finalizada', totalPedida,
-    `Itens: ${itens.map(i => `${i.nome}: ${i.quantidadePedida} cx`).join(', ')}`);
+  let ped = state.pedidosSeparar.find(p => p.codigo === codigo);
+  if (!ped) {
+    ped = {
+      codigo: codigo,
+      itens: JSON.parse(JSON.stringify(state.pedidoCargaAtual.itens)),
+      dataCriacao: new Date().toLocaleString(),
+      status: 'separar'
+    };
+    state.pedidosSeparar.push(ped);
+  } else {
+    Object.values(state.pedidoCargaAtual.itens).forEach(it => {
+      if (!ped.itens[it.produtoId]) {
+        ped.itens[it.produtoId] = {
+          produtoId: it.produtoId,
+          nome: it.nome,
+          codigoInterno: it.codigoInterno || '',
+          pacotes: it.quantidadePedida || 0,
+          caixas: it.quantidadePedida || 0
+        };
+      }
+    });
+  }
+
+  _finalizarPedido(ped);
+
   state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
   salvarPedidoCarga();
-  setData(STORAGE_KEYS.prateleiras, state.prateleiras);
-  setData(STORAGE_KEYS.produtos, state.produtos);
-  setData(STORAGE_KEYS.carga, state.carga);
   atualizarPedidoCarga();
   carregarPrateleiras();
   carregarCarga();
   atualizarDashboard();
-  mostrarToast('🚛 Pedido de carga finalizado!', 'success');
+  atualizarListasPedidos();
+  mostrarToast(`🚛 Pedido ${codigo} finalizado com sucesso!`, 'success');
 }
 
 function cancelarPedidoCarga() {
   if (!state.pedidoCargaAtual.ativo) return;
-  if (!confirm('⚠️ Cancelar o pedido de carga? As reservas da carga serão liberadas.')) return;
-  salvarEstadoParaUndo();
-  state.carga = state.carga.filter(c => c.pedidoCodigo !== CARGA_PEDIDO_TAG);
-  state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
-  salvarPedidoCarga();
-  setData(STORAGE_KEYS.carga, state.carga);
-  atualizarPedidoCarga();
-  carregarPrateleiras();
-  carregarCarga();
-  atualizarDashboard();
-  mostrarToast('🗑️ Pedido cancelado!', 'warning');
+  fecharVisualizacaoPedidoCarga();
+  mostrarToast('ℹ️ Visualização do pedido fechada.', 'info');
 }
 
 // ============================================================
@@ -4115,7 +4351,7 @@ function buscarDisponibilidadeProduto(produtoId) {
     pr.produtos.forEach(pos => {
       if (pos.id === produtoId && pos.quantidade > 0) {
         const res = state.carga
-          .filter(c => c.id === produtoId && c.prateleira === pr.id && c.posicao === pos.posicao && !c.pedidoCodigo)
+          .filter(c => c.id === produtoId && c.prateleira === pr.id && c.posicao === pos.posicao && !c.baixado)
           .reduce((a, c) => a + c.quantidade, 0);
         const disp = pos.quantidade - res;
         if (disp > 0) {
