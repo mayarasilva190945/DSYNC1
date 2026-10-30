@@ -2896,18 +2896,28 @@ body.dark-mode .scanner-produto-info.erro {
     color: var(--primary);
 }
 
-#cargaContainer {
+
+/* ===== GRID DOS CARDS DE CARGA ===== */
+
+#cargaContainer.carga-grid {
     display: grid !important;
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 16px;
+    gap: 16px !important;
     width: 100%;
-    box-sizing: border-box;
     align-items: stretch;
+    box-sizing: border-box;
 }
 
-#cargaContainer > .carga-card {
+#cargaContainer.carga-grid > .controls {
+    grid-column: 1 / -1 !important;
     width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+}
+
+#cargaContainer.carga-grid > .carga-card {
+    width: 100% !important;
+    min-width: 0 !important;
     max-width: 100%;
     box-sizing: border-box;
 }
@@ -2917,17 +2927,31 @@ body.dark-mode .scanner-produto-info.erro {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
     width: 100%;
+    min-width: 0;
     box-sizing: border-box;
 }
 
+#cargaContainer .carga-metric-box {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 6px 3px;
+}
+
+#cargaContainer .carga-metric-val {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 @media (max-width: 900px) {
-    #cargaContainer {
+    #cargaContainer.carga-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 }
 
 @media (max-width: 550px) {
-    #cargaContainer {
+    #cargaContainer.carga-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 }
