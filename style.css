@@ -1230,20 +1230,6 @@ body.dark-mode .dash-card .dash-number {
     overflow-wrap: anywhere;
 }
 
-/* Tablets */
-@media (max-width: 900px) {
-    .carga-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-/* Celulares */
-@media (max-width: 550px) {
-    .carga-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
 .carga-card {
     background: var(--bg-card);
     border-radius: var(--radius);
@@ -1281,7 +1267,7 @@ body.dark-mode .dash-card .dash-number {
 
 .carga-card-metrics {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     text-align: center;
     margin: 10px 0;
@@ -2441,7 +2427,7 @@ body.dark-mode .tabela-carga tr.pendente {
 
 .pedido-carga-totais {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
     margin-top: 15px;
 }
@@ -2494,7 +2480,7 @@ body.dark-mode .tabela-carga tr.pendente {
 
 @media (max-width: 900px) {
     .shelf-positions-grid {
-        grid-template-columns: repeat(3, 1fr) !important;
+         grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 }
 
@@ -2524,7 +2510,7 @@ body.dark-mode .tabela-carga tr.pendente {
     }
 
     .carga-grid {
-        grid-template-columns: 1fr;
+         grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .tab {
@@ -2901,7 +2887,7 @@ body.dark-mode .scanner-produto-info.erro {
 
 #cargaContainer.carga-grid {
     display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 16px !important;
     width: 100%;
     align-items: stretch;
@@ -2924,7 +2910,7 @@ body.dark-mode .scanner-produto-info.erro {
 
 #cargaContainer .carga-card-metrics {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
     width: 100%;
     min-width: 0;
