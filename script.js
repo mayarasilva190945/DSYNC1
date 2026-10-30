@@ -219,7 +219,96 @@ function migrarProdutosParaInjecao() {
 }
 
 // ===== PEDIDO DE CARGA PERSISTENTE =====
-function salvarPedidoCarga() { setData(STORAGE_KEYS.pedidoCarga, state.pedidoCargaAtual); }
+function salvarPedidoCarga() {
+  localStorage.setItem(
+    STORAGE_KEYS.pedidoCarga,
+    JSON.stringify(state.pedidoCargaAtual)
+  );
+
+  if (dadosCompartilhadosCarregados && usuarioSupabase) {
+    salvarPedidoCargaNaNuvem();
+  }
+}
+
+async function salvarPedidoCargaNaNuvem() {
+  if (!window.supabase || !usuarioSupabase) {
+    console.error('Usuário não autenticado.');
+    return false;
+  }
+
+  const pedido = JSON.parse(
+    JSON.stringify(state.pedidoCargaAtual || {
+      ativo: false,
+      codigo: '',
+      itens: {}
+    })
+  );
+
+  try {
+    const { data, error } = await window.supabase
+      .from('dsync_pedido_carga')
+      .update({
+        data: pedido,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', 1)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!data) {
+      throw new Error('Registro do pedido não encontrado.');
+    }
+
+    console.log('☁️ Pedido de carga salvo:', pedido.codigo);
+    return true;
+
+  } catch (erro) {
+    console.error('Erro ao salvar pedido de carga:', erro);
+    mostrarToast('❌ Erro ao salvar pedido na nuvem!', 'error');
+    return false;
+  }
+}
+async function carregarPedidoCargaDaNuvem() {
+  if (!window.supabase || !usuarioSupabase) {
+    console.error('Usuário não autenticado.');
+    return false;
+  }
+
+  try {
+    const { data, error } = await window.supabase
+      .from('dsync_pedido_carga')
+      .select('data')
+      .eq('id', 1)
+      .single();
+
+    if (error) throw error;
+
+    state.pedidoCargaAtual = data.data || {
+      ativo: false,
+      codigo: '',
+      itens: {}
+    };
+
+    localStorage.setItem(
+      STORAGE_KEYS.pedidoCarga,
+      JSON.stringify(state.pedidoCargaAtual)
+    );
+
+    console.log(
+      '☁️ Pedido de carga carregado:',
+      state.pedidoCargaAtual.codigo
+    );
+
+    return true;
+
+  } catch (erro) {
+    console.error('Erro ao carregar pedido de carga:', erro);
+    mostrarToast('❌ Erro ao carregar pedido da nuvem!', 'error');
+    return false;
+  }
+}
 
 function carregarPedidoCarga() {
   const salvo = getData(STORAGE_KEYS.pedidoCarga, null);
@@ -356,9 +445,10 @@ document.addEventListener('DOMContentLoaded', function () {
         await carregarTipoUsuario();
 
         console.log('✅ Sessão restaurada:', session.user.email);
-
         await carregarDaNuvem();
+        await carregarPedidoCargaDaNuvem();
         entrarApp();
+
       } else {
         document.getElementById('loginScreen').style.display = 'flex';
         document.getElementById('appContent').style.display = 'none';
@@ -513,10 +603,11 @@ async function fazerLoginSupabase() {
         ? 'admin'
         : 'usuario'
     };
-
     await carregarDaNuvem();
-
+    await carregarPedidoCargaDaNuvem();
     entrarApp();
+
+
 
   } catch (err) {
     console.error('Erro no login:', err);
@@ -635,12 +726,12 @@ async function salvarNaNuvem() {
       estoque: {}
     },
 
-    // Pedido de carga compartilhado entre todos os usuários
+    /* Pedido de carga compartilhado entre todos os usuários
     pedidoCargaAtual: state.pedidoCargaAtual || {
       ativo: false,
       codigo: '',
       itens: {}
-    }
+    }*/
   };
 
   try {
