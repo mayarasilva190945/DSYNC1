@@ -806,7 +806,6 @@ async function entrarApp() {
   document.body.classList.add('tab-dashboard');
 
   carregarTema();
-  carregarPedidoCarga();
 
   inicializarApp();
 
