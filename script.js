@@ -2288,6 +2288,10 @@ function carregarCarga() {
 
   try {
     const c = document.getElementById('cargaContainer');
+    // Corrige o layout da área Carga
+c.style.display = 'block';
+c.style.width = '100%';
+c.style.boxSizing = 'border-box';
     if (!c) {
       console.error('[CARGA] Container não encontrado');
       return;
@@ -2308,12 +2312,26 @@ function carregarCarga() {
     );
 
     let html = `
-      <div class="controls">
+      <div class="controls" style="
+  width:100%;
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:15px;
+  box-sizing:border-box;
+">
         <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
         <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
         <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
       </div>
-      <div id="cargaTabelaHorizontal" style="width:100%;overflow-x:auto;">
+      <div id="cargaTabelaHorizontal" style="
+  display:block;
+  width:100%;
+  min-width:0;
+  overflow-x:auto;
+  box-sizing:border-box;
+">
     `;
 
     const itensPedido = state.pedidoCargaAtual?.itens || {};
@@ -2321,7 +2339,7 @@ function carregarCarga() {
 
     if (lista.length > 0) {
       html += `
-        <table class="tabela-carga">
+        <table class="tabela-carga" style="width:100%; min-width:850px;">
           <thead>
             <tr>
               <th>Produto</th>
