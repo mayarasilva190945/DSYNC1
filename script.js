@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (session) {
         usuarioSupabase = session.user;
 
-        /*const emailAdmin = 'admin@admin.com';*/
+        const emailAdmin = 'admin@admin.com';
         const nomeUsuario =
           session.user.user_metadata?.nome ||
           session.user.user_metadata?.display_name ||
@@ -700,13 +700,11 @@ function agendarSalvamentoNuvem() {
 async function carregarDaNuvem() {
   if (!window.supabase || !usuarioSupabase) return;
   dadosCompartilhadosCarregados = false;
-  const { error } = await window.supabase
-  .from('dsync_compartilhado')
-  .upsert({
-    id: 1,
-    data: dados,
-    updated_at: new Date().toISOString()
-  });
+  const { data: registro, error } = await window.supabase
+    .from('dsync_compartilhado')
+    .select('data')
+    .eq('id', 1)
+    .maybeSingle();
 
   if (error) {
     console.error('Erro ao carregar dados compartilhados:', error);
@@ -715,9 +713,8 @@ async function carregarDaNuvem() {
   }
 
   if (!registro || !registro.data) {
-  console.log('Nenhum dado compartilhado encontrado.');
-  dadosCompartilhadosCarregados = true;
-  return;
+    console.log('Nenhum dado compartilhado encontrado.');
+    return;
   }
 
   const dados = registro.data;
@@ -733,7 +730,7 @@ async function carregarDaNuvem() {
     caixaModeloB: 0,
     embalagem40x50: 0
   };
-  
+
   state.configInsumos = dados.configInsumos || {};
   state.produtoInsumoMap = dados.produtoInsumoMap || {};
   state.pedidosSeparar = dados.pedidosSeparar || [];
@@ -2283,45 +2280,189 @@ function finalizarCarga() {
   mostrarToast('🚛 Carga finalizada!', 'success');
 }
 
+
+
 function carregarCarga() {
-  const c = document.getElementById('cargaContainer');
-  if (!c) return;
-  let html = `
-    <div class="controls">
-      <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
-      <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
-      <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
-    </div>`;
-  if (state.carga.length === 0) {
-    html += '<div style="text-align:center;padding:40px;color:var(--text-muted);">🚛 Nenhuma reserva.</div>';
+  console.log('[CARGA] Iniciando carregarCarga()');
+
+  try {
+    const c = document.getElementById('cargaContainer');
+
+    if (!c) {
+      console.error('[CARGA] ERRO: elemento cargaContainer não encontrado.');
+      return;
+    }
+
+    console.log('[CARGA] Container encontrado:', c);
+
+    console.log('[CARGA] Estado:', {
+      stateExiste: typeof state !== 'undefined',
+      cargaArray: Array.isArray(state?.carga),
+      totalReservas: state?.carga?.length,
+      totalProdutos: state?.produtos?.length
+    });
+
+    let html = `
+      <div class="controls">
+        <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
+        <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
+        <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
+      </div>`;
+
+    let total = 0;
+    let quantidadeRenderizada = 0;
+
+    if (!Array.isArray(state.carga)) {
+      console.error('[CARGA] ERRO: state.carga não é um array.');
+      return;
+    }
+
+    state.carga.forEach(item => {
+      const produto = state.produtos.find(p => p.id === item.id);
+
+      if (!produto) {
+        console.warn('[CARGA] Produto não encontrado:', item);
+        return;
+      }
+
+      total += Number(item.quantidade) || 0;
+      quantidadeRenderizada++;
+
+      const prateleira = state.prateleiras.find(
+        s => s.id === item.prateleira
+      );
+
+      const nome = prateleira?.nome || '?';
+
+      const loc = item.prateleira && item.posicao
+        ? `📍 ${nome}${item.posicao}`
+        : '📍 Sem local';
+
+      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
+      const badgeStyle = isCarga
+        ? 'background:var(--accent);'
+        : 'background:var(--info);';
+
+      const ped = item.pedidoCodigo
+        ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>`
+        : '';
+
+      html += `
+        <div class="carga-card"
+             onclick="abrirDetalhesDaCarga('${item.uid}')"
+             title="Clique para ver o pedido associado"
+             style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;cursor:pointer;">
+          <div>
+            <strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
+            <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+            <small style="color:var(--info);">👆 Clique para ver o pedido</small>
+          </div>
+          <button class="btn btn-xs btn-danger"
+                  onclick="event.stopPropagation();removerDaCarga('${item.uid}')">
+            🗑️
+          </button>
+        </div>`;
+    });
+
     c.innerHTML = html;
-    document.getElementById('totalCargaProdutos').textContent = '0';
-    document.getElementById('totalCargaItens').textContent = '0';
+
+    const elProdutos = document.getElementById('totalCargaProdutos');
+    const elItens = document.getElementById('totalCargaItens');
+
+    if (elProdutos) {
+      elProdutos.textContent = state.carga.filter(item =>
+        state.produtos.some(p => p.id === item.id)
+      ).length;
+    }
+
+    if (elItens) {
+      elItens.textContent = total;
+    }
+
+    console.log('[CARGA] Renderização concluída:', {
+      reservasNoEstado: state.carga.length,
+      produtosRenderizados: quantidadeRenderizada,
+      totalItens: total,
+      htmlGerado: c.innerHTML.length,
+      containerVisivel: c.offsetParent !== null
+    });
+
+  } catch (erro) {
+    console.error('[CARGA] ERRO durante a execução:', erro);
+    console.error('[CARGA] Stack:', erro.stack);
+  }
+}
+
+function abrirDetalhesDaCarga(uid) {
+  const item = state.carga.find(c => c.uid === uid);
+
+  if (!item) {
+    mostrarToast('❌ Carga não encontrada!', 'error');
     return;
   }
-  let total = 0;
-  state.carga.forEach(item => {
-    const produto = state.produtos.find(p => p.id === item.id);
-    if (produto) {
-      total += item.quantidade;
-      const nome = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
-      const loc = item.prateleira && item.posicao ? `📍 ${nome}${item.posicao}` : '📍 Sem local';
-      const isCarga = item.pedidoCodigo === CARGA_PEDIDO_TAG;
-      const badgeStyle = isCarga ? 'background:var(--accent);' : 'background:var(--info);';
-      const ped = item.pedidoCodigo ? ` <span style="${badgeStyle}color:white;font-size:10px;padding:2px 6px;border-radius:8px;">${isCarga ? '🚛 CARGA' : '📋 ' + item.pedidoCodigo}</span>` : '';
-      html += `
-        <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
-          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
-            <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
-          </div>
-          <button class="btn btn-xs btn-danger" onclick="removerDaCarga('${item.uid}')">🗑️</button>
-        </div>`;
+
+  // Carga vinculada ao pedido de carga atual
+  if (item.pedidoCodigo === CARGA_PEDIDO_TAG) {
+    if (!state.pedidoCargaAtual?.ativo) {
+      mostrarToast('❌ Não há pedido de carga ativo.', 'error');
+      return;
     }
-  });
-  c.innerHTML = html;
-  document.getElementById('totalCargaProdutos').textContent = state.carga.length;
-  document.getElementById('totalCargaItens').textContent = total;
+
+    switchTab('pedidos');
+    mostrarSubAba('carga');
+
+    setTimeout(() => {
+      const detalhes = document.getElementById('pedidoCargaContainer');
+      detalhes?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+
+    return;
+  }
+
+  // Carga vinculada a um pedido de separação
+  if (item.pedidoCodigo) {
+    const pedido = state.pedidosSeparar.find(
+      p => p.codigo === item.pedidoCodigo
+    );
+
+    if (pedido) {
+      editarPedido(pedido.codigo);
+      return;
+    }
+
+    const finalizado = state.pedidosFinalizados.find(
+      p => p.codigo === item.pedidoCodigo
+    );
+
+    if (finalizado) {
+      switchTab('pedidos');
+      mostrarSubAba('finalizado');
+
+      setTimeout(() => {
+        const lista = document.getElementById('listaPedidosFinalizados');
+        const cartoes = lista?.querySelectorAll('.pedido-card') || [];
+
+        for (const cartao of cartoes) {
+          if (cartao.textContent.includes(finalizado.codigo)) {
+            cartao.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center'
+            });
+            break;
+          }
+        }
+      }, 150);
+
+      return;
+    }
+  }
+
+  mostrarToast(
+    'ℹ️ Esta reserva não está vinculada a um pedido.',
+    'info'
+  );
 }
+
 
 // ===== LEITOR DE PEDIDOS =====
 function extrairCodigoEQuantidade(valorBruto) {
@@ -3213,7 +3354,7 @@ function mostrarSubAba(subAba) {
   else if (subAba === 'pedidonovo') atualizarPedidoNovo();
   else if (subAba === 'separar') atualizarListasPedidos();
   else if (subAba === 'finalizado') atualizarListasPedidos();
-  else if (subAba === 'carga') { carregarPedidoCarga(); montarPedidoCarga(); }
+  else if (subAba === 'carga') { montarPedidoCarga();}
   else if (subAba === 'injecao') renderizarInjecao();
   else if (subAba === 'injetar') renderizarInjetar();
   else if (subAba === 'injetando') renderizarInjetando();
@@ -3815,24 +3956,49 @@ function excluirPedido(codigo, tipo) {
 // ============================================================
 // PEDIDO DE CARGA PERSISTENTE
 // ============================================================
+
 function montarPedidoCarga() {
-  carregarPedidoCarga();
   const c = document.getElementById('pedidoCargaContainer');
   if (!c) return;
+
+  if (!state.pedidoCargaAtual) {
+    state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
+  }
+
   if (!state.pedidoCargaAtual.ativo) {
     c.innerHTML = `
       <div class="pedido-carga-wrap" style="text-align:center;">
         <h3 style="color:var(--text);">🚛 Montar Pedido de Carga</h3>
-        <p style="color:var(--text-muted);margin:15px 0;">Nenhum pedido de carga ativo.</p>
+        <p style="color:var(--text-muted);margin:15px 0;">
+          Nenhum pedido de carga ativo.
+        </p>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:15px;">
-          <input type="text" id="codigoCargaInput" placeholder="Código do Pedido (ex: CARGA-001)" style="min-width:250px;padding:12px 15px;border:2px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);">
-          <button class="btn btn-lg btn-success" onclick="criarPedidoCarga()">➕ Criar Pedido de Carga</button>
+          <input type="text" id="codigoCargaInput"
+            placeholder="Código do Pedido (ex: CARGA-001)"
+            style="min-width:250px;padding:12px 15px;">
+          <button class="btn btn-lg btn-success"
+            onclick="criarPedidoCarga()">
+            ➕ Criar Pedido de Carga
+          </button>
         </div>
       </div>`;
   } else {
     renderizarCargaAtiva();
   }
 }
+
+function atualizarPedidoCarga() {
+  if (!state.pedidoCargaAtual) {
+    state.pedidoCargaAtual = { ativo: false, codigo: '', itens: {} };
+  }
+
+  if (state.pedidoCargaAtual.ativo) {
+    renderizarCargaAtiva();
+  } else {
+    montarPedidoCarga();
+  }
+}
+
 
 function criarPedidoCarga() {
   const codigo = (document.getElementById('codigoCargaInput')?.value || '').trim() || ('CARGA-' + Date.now().toString().slice(-4));
@@ -3918,11 +4084,6 @@ function renderizarTotaisCarga(itens) {
   `;
 }
 
-function atualizarPedidoCarga() {
-  carregarPedidoCarga();
-  if (state.pedidoCargaAtual.ativo) renderizarCargaAtiva();
-  else montarPedidoCarga();
-}
 
 function adicionarProdutoPedidoCarga() {
   const pid = document.getElementById('produtoPedidoCargaSelect').value;
@@ -4829,7 +4990,7 @@ document.addEventListener('DOMContentLoaded', function () {
           await navigator.serviceWorker.getRegistrations();
 
         for (const registration of registrations) {
-          if (registration.scope.includes('/dsync1/')) {
+          if (registration.scope.includes('/DSYNC/')) {
             await registration.unregister();
           }
         }
