@@ -2281,17 +2281,12 @@ function finalizarCarga() {
 }
 
 
-
-
 function carregarCarga() {
   console.log('[CARGA] Iniciando carregarCarga()');
 
   try {
     const c = document.getElementById('cargaContainer');
-    // Corrige o layout da área Carga
-c.style.display = 'block';
-c.style.width = '100%';
-c.style.boxSizing = 'border-box';
+
     if (!c) {
       console.error('[CARGA] Container não encontrado');
       return;
@@ -2312,105 +2307,175 @@ c.style.boxSizing = 'border-box';
     );
 
     let html = `
-      <div class="controls" style="
-  width:100%;
-  display:flex;
-  flex-direction:row;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-bottom:15px;
-  box-sizing:border-box;
-">
+      <div class="controls">
         <button class="warning" onclick="finalizarCarga()">🚛 Finalizar Carga</button>
         <button class="danger" onclick="zerarCarga()">🗑️ Limpar Reservas</button>
         <button class="info" onclick="exportarCargaPDF()">📄 Exportar PDF</button>
       </div>
-      <div id="cargaTabelaHorizontal" style="
-  display:block;
-  width:100%;
-  min-width:0;
-  overflow-x:auto;
-  box-sizing:border-box;
-">
+
+      <div style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+        gap:15px;
+        width:100%;
+        box-sizing:border-box;
+        margin-top:15px;
+      ">
     `;
 
     const itensPedido = state.pedidoCargaAtual?.itens || {};
     const lista = Object.values(itensPedido);
 
-    if (lista.length > 0) {
+    // Cards dos produtos do pedido de carga
+    lista.forEach(item => {
+      const reservado = getReservadoCargaAtual(item.produtoId);
+      const produzido = item.quantidadeProduzida || 0;
+      const falta = getFaltaCargaAtual(item);
+      const completo = falta <= 0;
+
       html += `
-        <table class="tabela-carga" style="width:100%; min-width:850px;">
-          <thead>
-            <tr>
-              <th>Produto</th>
-              <th>Pedida</th>
-              <th>Reservado</th>
-              <th>Produzido</th>
-              <th>Falta</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody>`;
+        <div style="
+          background:var(--card-bg, #fff);
+          border:1px solid var(--border, #ddd);
+          border-radius:12px;
+          padding:18px;
+          width:100%;
+          box-sizing:border-box;
+          box-shadow:0 2px 6px rgba(0,0,0,0.06);
+        ">
 
-      lista.forEach(item => {
-        const reservado = getReservadoCargaAtual(item.produtoId);
-        const produzido = item.quantidadeProduzida || 0;
-        const falta = getFaltaCargaAtual(item);
-        const completo = falta <= 0;
-        const rowClass = completo ? 'completo' : (falta <= 5 ? 'pendente' : '');
+          <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:8px;
+            margin-bottom:15px;
+          ">
+            <strong style="font-size:17px;">
+              ${item.nome}
+            </strong>
 
-        html += `
-          <tr class="${rowClass}">
-            <td><strong>${item.nome}</strong>${completo ? ' ✅' : ''}</td>
-            <td>${item.quantidadePedida}</td>
-            <td class="valor-reservado">${reservado}</td>
-            <td class="valor-produzido">${produzido}</td>
-            <td class="${completo ? 'valor-completo' : 'valor-falta'}">
-              ${completo ? '0 ✅' : falta}
-            </td>
-            <td>
-              ${!completo ? `<button class="btn btn-xs btn-warning" onclick="registrarProducaoCarga('${item.produtoId}')">🏭 Produzir</button>` : ''}
-              <button class="btn btn-xs btn-info" onclick="editarQuantidadeCarga('${item.produtoId}')">✏️</button>
-              <button class="btn btn-xs btn-danger" onclick="removerProdutoPedidoCarga('${item.produtoId}')">🗑️</button>
-            </td>
-          </tr>`;
-      });
+            <span style="
+              font-size:11px;
+              padding:5px 9px;
+              border-radius:15px;
+              background:${completo ? '#d1fae5' : '#fef3c7'};
+              color:${completo ? '#065f46' : '#92400e'};
+            ">
+              ${completo ? '✅ Completo' : '⏳ Pendente'}
+            </span>
+          </div>
 
-      html += '</tbody></table>';
-    } else if (produtosValidos.length === 0) {
+          <div style="
+            display:grid;
+            grid-template-columns:repeat(2,minmax(0,1fr));
+            gap:10px;
+          ">
+
+            <div style="background:var(--bg-secondary,#f3f4f6);padding:12px;border-radius:8px;">
+              <div style="font-size:12px;color:var(--text-muted);">Pedida</div>
+              <strong style="font-size:23px;">${item.quantidadePedida}</strong>
+            </div>
+
+            <div style="background:var(--bg-secondary,#f3f4f6);padding:12px;border-radius:8px;">
+              <div style="font-size:12px;color:var(--text-muted);">Reservado</div>
+              <strong style="font-size:23px;color:#059669;">${reservado}</strong>
+            </div>
+
+            <div style="background:var(--bg-secondary,#f3f4f6);padding:12px;border-radius:8px;">
+              <div style="font-size:12px;color:var(--text-muted);">Produzido</div>
+              <strong style="font-size:23px;color:#2563eb;">${produzido}</strong>
+            </div>
+
+            <div style="background:var(--bg-secondary,#f3f4f6);padding:12px;border-radius:8px;">
+              <div style="font-size:12px;color:var(--text-muted);">Falta</div>
+              <strong style="font-size:23px;color:${completo ? '#059669' : '#dc2626'};">${falta}</strong>
+            </div>
+
+          </div>
+
+          <div style="
+            display:flex;
+            flex-wrap:wrap;
+            gap:8px;
+            margin-top:15px;
+            padding-top:12px;
+            border-top:1px solid var(--border,#ddd);
+          ">
+
+            ${!completo ? `
+              <button class="btn btn-xs btn-warning"
+                onclick="registrarProducaoCarga('${item.produtoId}')">
+                🏭 Produzir
+              </button>
+            ` : ''}
+
+            <button class="btn btn-xs btn-info"
+              onclick="editarQuantidadeCarga('${item.produtoId}')">
+              ✏️ Editar
+            </button>
+
+            <button class="btn btn-xs btn-danger"
+              onclick="removerProdutoPedidoCarga('${item.produtoId}')">
+              🗑️ Remover
+            </button>
+
+          </div>
+        </div>
+      `;
+    });
+
+    // Preserva reservas que não pertencem ao pedido de carga atual.
+    const reservasAvulsas = produtosValidos.filter(item =>
+      !lista.some(p => p.produtoId === item.id) ||
+      item.pedidoCodigo !== CARGA_PEDIDO_TAG
+    );
+
+    reservasAvulsas.forEach(item => {
+      const produto = state.produtos.find(p => p.id === item.id);
+      const prateleira = state.prateleiras.find(
+        s => s.id === item.prateleira
+      );
+
+      const local = item.prateleira && item.posicao
+        ? `📍 ${prateleira?.nome || '?'}${item.posicao}`
+        : '📍 Sem local';
+
+      html += `
+        <div class="carga-card" style="
+          background:var(--card-bg,#fff);
+          border:1px solid var(--border,#ddd);
+          border-radius:12px;
+          padding:18px;
+          width:100%;
+          box-sizing:border-box;
+        ">
+          <strong>${produto.nome}</strong>
+          <div style="font-size:22px;margin:12px 0;">
+            ${item.quantidade} cx
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);">
+            ${local}
+          </div>
+          <button class="btn btn-xs btn-danger"
+            style="margin-top:12px;"
+            onclick="removerDaCarga('${item.uid}')">
+            🗑️ Remover reserva
+          </button>
+        </div>
+      `;
+    });
+
+    if (lista.length === 0 && reservasAvulsas.length === 0) {
       html += `
         <div style="text-align:center;padding:30px;color:var(--text-muted);">
           🚛 Nenhuma reserva na carga.
-        </div>`;
-    } else {
-      // Preserva a visualização de reservas antigas que não pertencem
-      // a um pedido de carga estruturado.
-      html += '<div style="padding:10px;">';
-
-      produtosValidos.forEach(item => {
-        const produto = state.produtos.find(p => p.id === item.id);
-        const prateleira = state.prateleiras.find(
-          s => s.id === item.prateleira
-        );
-        const local = item.prateleira && item.posicao
-          ? `📍 ${prateleira?.nome || '?'}${item.posicao}`
-          : '📍 Sem local';
-
-        html += `
-          <div class="carga-card" style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;">
-            <div>
-              <strong>${produto.nome}</strong> - ${item.quantidade} cx
-              <div style="font-size:12px;color:var(--text-muted);">${local}</div>
-            </div>
-            <button class="btn btn-xs btn-danger"
-              onclick="removerDaCarga('${item.uid}')">🗑️</button>
-          </div>`;
-      });
-
-      html += '</div>';
+        </div>
+      `;
     }
 
     html += '</div>';
+
     c.innerHTML = html;
 
     const elProdutos = document.getElementById('totalCargaProdutos');
@@ -2419,11 +2484,10 @@ c.style.boxSizing = 'border-box';
     if (elProdutos) elProdutos.textContent = produtosValidos.length;
     if (elItens) elItens.textContent = total;
 
-    console.log('[CARGA] Renderização concluída', {
-      reservas: produtosValidos.length,
-      itensPedido: lista.length,
-      total,
-      tabela: !!c.querySelector('#cargaTabelaHorizontal table')
+    console.log('[CARGA] Cards renderizados:', {
+      produtosPedido: lista.length,
+      reservasAvulsas: reservasAvulsas.length,
+      totalItens: total
     });
 
   } catch (erro) {
@@ -2431,6 +2495,10 @@ c.style.boxSizing = 'border-box';
     console.error(erro.stack);
   }
 }
+
+
+
+
 
 
 function abrirDetalhesDaCarga(uid) {
