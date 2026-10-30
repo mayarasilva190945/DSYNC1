@@ -2884,14 +2884,21 @@ body.dark-mode .scanner-produto-info.erro {
 
 
 /* ===== GRID DOS CARDS DE CARGA ===== */
+@media (min-width: 901px) {
+    #cargaContainer.carga-grid {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 16px !important;
+        width: 100%;
+        box-sizing: border-box;
+        align-items: stretch;
+    }
 
-#cargaContainer.carga-grid {
-    display: grid !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px !important;
-    width: 100%;
-    align-items: stretch;
-    box-sizing: border-box;
+    #cargaContainer.carga-grid > .carga-card {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
 }
 
 #cargaContainer.carga-grid > .controls {
