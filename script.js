@@ -2348,7 +2348,18 @@ function carregarCarga() {
         : '';
 
       html += `
-        <div class="carga-card"
+      <div class="carga-card" style="display:flex; justify-content:space-between; align-items:center; padding:10px; margin-bottom:8px;">
+          <div><strong>${produto.nome}</strong> - ${item.quantidade} cx${ped}
+          <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+      </div>
+          }
+          });
+          c.innerHTML = html;
+          document.getElementById('totalCargaProdutos').textContent = state.carga.length;
+          document.getElementById('totalCargaItens').textContent = total;
+        }
+
+        <div class="tabela-carga"
              onclick="abrirDetalhesDaCarga('${item.uid}')"
              title="Clique para ver o pedido associado"
              style="display:flex;justify-content:space-between;align-items:center;padding:10px;margin-bottom:8px;cursor:pointer;">
