@@ -943,15 +943,25 @@
                     </div>
 
                     <div id="sub-tab-carga" class="sub-tab-content">
+
                         <div class="controls">
                             <button class="success" onclick="adicionarTodosCarga()">
-                                ➕ Adicionar Todos
+                              ➕ Adicionar Todos
                             </button>
-                            <button class="danger" onclick="zerarCarga()">🗑️ Limpar</button>
+
+                            <button class="danger" onclick="zerarCarga()">
+                                🗑️ Limpar
+                            </button>
+
+                            <button class="info" onclick="exportarCargaPDF()">
+                                📄 Exportar PDF
+                            </button>
+
                             <button class="primary" onclick="montarPedidoCarga()">
                                 📦 Montar Pedido
                             </button>
                         </div>
+
                         <div class="stats">
                             <div class="stat-card">
                                 <div class="stat-number" id="totalCargaProdutos">0</div>
