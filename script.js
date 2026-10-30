@@ -2318,27 +2318,71 @@ function carregarCarga() {
     const produto = state.produtos.find(p => p.id === item.id);
     if (produto) {
       total += item.quantidade;
-      const nome = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
-      const loc = item.prateleira && item.posicao ? `📍 ${nome}${item.posicao}` : '📍 Sem local';
+      const nomePrateleira = state.prateleiras.find(s => s.id === item.prateleira)?.nome || '?';
+      const loc = item.prateleira && item.posicao ? `📍 ${nomePrateleira}${item.posicao}` : '📍 Sem local';
       const isCarregado = item.carregado || item.finalizado;
-      const badgeCarregado = isCarregado ? `<span style="background:var(--success, #10b981); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600; margin-left:4px;">✅ Pronto</span>` : '';
-      const ped = item.pedidoCodigo ? `<span style="background:var(--info, #3b82f6); color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:600;">📋 ${item.pedidoCodigo}</span>` : '<span style="background:#64748b; color:white; font-size:10px; padding:2px 6px; border-radius:10px;">Avulso</span>';
+
+      // ── Métricas ──
+      const pedidoItem = state.pedidoCargaAtual?.itens?.[item.id] || {};
+      const pedida   = pedidoItem.quantidadePedida  || item.quantidade;
+      const reservado = getReservadoCargaAtual(item.id);
+      const produzido = pedidoItem.quantidadeProduzida || 0;
+      const falta     = Math.max(0, pedida - reservado - produzido);
+
+      // ── Status class ──
+      const statusClass = falta === 0 ? 'completo' : (isCarregado ? 'pronto' : 'falta');
+
+      // ── Badges ──
+      const badgeCarregado = isCarregado
+        ? `<span style="background:var(--success,#10b981);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;margin-left:4px;">✅ Pronto</span>`
+        : '';
+      const badgePed = item.pedidoCodigo
+        ? `<span style="background:var(--info,#3b82f6);color:white;font-size:10px;padding:2px 6px;border-radius:10px;font-weight:600;">📋 ${item.pedidoCodigo}</span>`
+        : '<span style="background:#64748b;color:white;font-size:10px;padding:2px 6px;border-radius:10px;">Avulso</span>';
+
+      // ── Classe de borda inline ──
+      const borderColor  = isCarregado ? 'var(--success,#10b981)' : (falta > 0 ? 'var(--danger,#ef4444)' : 'var(--accent,#f59e0b)');
+      const borderLeft   = `5px solid ${borderColor}`;
+      const borderTop    = `1px solid ${isCarregado ? 'var(--success,#10b981)' : 'var(--border)'}`;
 
       html += `
-        <div class="carga-card" style="display:flex; flex-direction:column; justify-content:space-between; padding:14px; border-radius:12px; border:1px solid ${isCarregado ? 'var(--success, #10b981)' : 'var(--border)'}; border-left:5px solid ${isCarregado ? 'var(--success, #10b981)' : 'var(--accent, #f59e0b)'}; background:var(--bg-card, #fff); box-shadow:0 2px 6px rgba(0,0,0,0.06); cursor:pointer;"
+        <div class="carga-card ${statusClass}" style="display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;border:${borderTop};border-left:${borderLeft};background:var(--bg-card,#fff);box-shadow:0 2px 6px rgba(0,0,0,0.06);cursor:pointer;"
              onclick="abrirDetalhesDaCarga('${item.uid}')" title="Clique para ver o pedido">
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:4px; flex-wrap:wrap;">
-              <div>${ped}${badgeCarregado}</div>
-              <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); removerDaCarga('${item.uid}')" title="Remover item">🗑️</button>
+
+          <!-- Cabeçalho: badges + remover -->
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap;">
+            <div>${badgePed}${badgeCarregado}</div>
+            <button class="btn btn-xs btn-danger" onclick="event.stopPropagation(); removerDaCarga('${item.uid}')" title="Remover item">🗑️</button>
+          </div>
+
+          <!-- Nome do produto -->
+          <strong style="font-size:14px;color:var(--text);line-height:1.3;">${produto.nome}</strong>
+
+          <!-- Localização -->
+          <div style="font-size:12px;color:var(--text-muted);">${loc}</div>
+
+          <!-- Métricas: Pedida | Reservado | Produzido | Falta -->
+          <div class="carga-card-metrics">
+            <div class="carga-metric-box">
+              <div class="carga-metric-label">Pedida</div>
+              <div class="carga-metric-val">${pedida}</div>
             </div>
-            <strong style="font-size:15px; color:var(--text); display:block; margin-bottom:4px;">${produto.nome}</strong>
-            <div style="font-size:22px; font-weight:bold; color:var(--primary, #1a2b4c); margin-bottom:6px;">${item.quantidade} <span style="font-size:13px; font-weight:normal; color:var(--text-muted);">cx</span></div>
-            <div style="font-size:12px; color:var(--text-muted);">${loc}</div>
+            <div class="carga-metric-box reservado">
+              <div class="carga-metric-label">Reservado</div>
+              <div class="carga-metric-val">${reservado}</div>
+            </div>
+            <div class="carga-metric-box produzido">
+              <div class="carga-metric-label">Produzido</div>
+              <div class="carga-metric-val">${produzido}</div>
+            </div>
+            <div class="carga-metric-box ${falta === 0 ? 'completo' : 'falta'}">
+              <div class="carga-metric-label">Falta</div>
+              <div class="carga-metric-val">${falta}</div>
+            </div>
           </div>
-          <div style="margin-top:10px; font-size:11px; color:var(--info, #3b82f6); text-align:right;">
-            👆 Ver pedido
-          </div>
+
+          <!-- Rodapé -->
+          <div style="font-size:11px;color:var(--info,#3b82f6);text-align:right;">👆 Ver pedido</div>
         </div>`;
     }
   });
