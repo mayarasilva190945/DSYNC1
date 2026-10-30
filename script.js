@@ -90,6 +90,8 @@ function setData(key, value) {
 
 
 function saveData() {
+  if (!dadosCompartilhadosCarregados) return;
+
   setData(STORAGE_KEYS.produtos, state.produtos);
   setData(STORAGE_KEYS.prateleiras, state.prateleiras);
   setData(STORAGE_KEYS.carga, state.carga);
