@@ -2895,3 +2895,39 @@ body.dark-mode .scanner-produto-info.erro {
 #addProdutoInfo strong {
     color: var(--primary);
 }
+
+#cargaContainer {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 16px;
+    width: 100%;
+    box-sizing: border-box;
+    align-items: stretch;
+}
+
+#cargaContainer > .carga-card {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#cargaContainer .carga-card-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+    #cargaContainer {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+
+@media (max-width: 550px) {
+    #cargaContainer {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
