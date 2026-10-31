@@ -92,3 +92,142 @@ function exportarCargaPDF() {
 
   mostrarToast('✅ PDF exportado com sucesso!', 'success');
 }
+
+
+function exportarInsumosPDF() {
+  if (!state || !state.insumos) {
+    mostrarToast('❌ Dados de insumos não encontrados!', 'error');
+    return;
+  }
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    mostrarToast('❌ Biblioteca jsPDF não encontrada!', 'error');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const produtos = Array.isArray(state.produtos)
+    ? state.produtos
+    : [];
+
+  const insumos = state.insumos || {};
+  const configs = state.configInsumos || {};
+  const mapa = state.produtoInsumoMap || {};
+
+  doc.setFontSize(18);
+  doc.text('RELATÓRIO DE ESTOQUE DE INSUMOS', 14, 18);
+
+  doc.setFontSize(10);
+  doc.text(
+    `Data da exportação: ${new Date().toLocaleString('pt-BR')}`,
+    14,
+    26
+  );
+
+  // Resumo dos estoques
+  doc.autoTable({
+    startY: 33,
+    head: [['Insumo', 'Estoque atual', 'Limite de alerta', 'Situação']],
+    body: [
+      [
+        'Caixas Modelo A',
+        insumos.caixaModeloA || 0,
+        configs.alertaCaixaModeloA ?? 0,
+        (insumos.caixaModeloA || 0) <=
+          (configs.alertaCaixaModeloA ?? 0) ? 'ESTOQUE BAIXO' : 'Normal'
+      ],
+      [
+        'Caixas Modelo B',
+        insumos.caixaModeloB || 0,
+        configs.alertaCaixaModeloB ?? 0,
+        (insumos.caixaModeloB || 0) <=
+          (configs.alertaCaixaModeloB ?? 0) ? 'ESTOQUE BAIXO' : 'Normal'
+      ],
+      [
+        'Embalagem 40x50',
+        insumos.embalagem40x50 || 0,
+        configs.alertaEmbalagem40x50 ?? 0,
+        (insumos.embalagem40x50 || 0) <=
+          (configs.alertaEmbalagem40x50 ?? 0) ? 'ESTOQUE BAIXO' : 'Normal'
+      ]
+    ],
+    theme: 'grid',
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [40, 90, 140], textColor: 255 }
+  });
+
+  // Tabela por produto
+  const linhas = produtos.map(p => {
+    const config = mapa[p.id] || {
+      modeloCaixa: 'A',
+      embalagemPorCaixa: 25,
+      tipoEmbalagem: 'individual'
+    };
+
+    const usa40 = typeof usaEmbalagem40x50 === 'function'
+      ? usaEmbalagem40x50(p)
+      : false;
+
+    const estoque = usa40
+      ? (insumos.embalagem40x50 || 0)
+      : (insumos.embalagens?.[p.id] || 0);
+
+    const alerta = usa40
+      ? (configs.alertaEmbalagem40x50 ?? 0)
+      : (
+          configs.alertaEmbalagemPorProduto?.[p.id] ??
+          configs.alertaEmbalagemPadrao ??
+          0
+        );
+
+    return [
+      p.nome || '',
+      config.modeloCaixa || 'A',
+      usa40 ? '40x50' : 'Individual',
+      config.embalagemPorCaixa ?? 25,
+      estoque,
+      alerta,
+      estoque <= alerta ? 'ESTOQUE BAIXO' : 'Normal'
+    ];
+  });
+
+  const inicioTabela = doc.lastAutoTable.finalY + 10;
+
+  doc.autoTable({
+    startY: inicioTabela,
+    head: [[
+      'Produto',
+      'Caixa',
+      'Embalagem',
+      'Emb./cx',
+      'Estoque',
+      'Alerta',
+      'Situação'
+    ]],
+    body: linhas,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: [40, 90, 140], textColor: 255 },
+    didParseCell: function(data) {
+      if (
+        data.section === 'body' &&
+        data.column.index === 6 &&
+        data.cell.raw === 'ESTOQUE BAIXO'
+      ) {
+        data.cell.styles.textColor = [200, 0, 0];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    }
+  });
+
+  doc.save('Relatorio_Estoque_Insumos.pdf');
+
+  mostrarToast('✅ PDF de insumos exportado!', 'success');
+}

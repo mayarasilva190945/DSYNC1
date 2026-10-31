@@ -724,14 +724,9 @@ async function salvarNaNuvem() {
     materiaPrima: state.materiaPrima || {
       tipos: [],
       estoque: {}
-    },
+    }
 
-    /* Pedido de carga compartilhado entre todos os usuários
-    pedidoCargaAtual: state.pedidoCargaAtual || {
-      ativo: false,
-      codigo: '',
-      itens: {}
-    }*/
+
   };
 
   try {
@@ -3869,43 +3864,95 @@ function novoPedido() {
   mostrarToast(`✅ Pedido ${codigo} criado!`, 'success');
 }
 
+
 function adicionarItemPedidoSeparacao() {
-  if (!pedidoAtualEmEdicao) { mostrarToast('❌ Crie um pedido primeiro!', 'error'); return; }
+  if (!pedidoAtualEmEdicao) {
+    mostrarToast('❌ Crie um pedido primeiro!', 'error');
+    return;
+  }
+
   const pid = document.getElementById('pedidoNovoProdutoSelect').value;
-  const q = parseInt(document.getElementById('pedidoNovoQuantidadeInput').value);
-  if (!pid || !q || q <= 0) { mostrarToast('❌ Dados inválidos!', 'error'); return; }
+  const qtdPacotes = parseInt(document.getElementById('pedidoNovoQuantidadeInput').value);
+
+  if (!pid || !qtdPacotes || qtdPacotes <= 0) {
+    mostrarToast('❌ Selecione o produto e a quantidade em pacotes!', 'error');
+    return;
+  }
+
   const produto = state.produtos.find(p => p.id === pid);
   if (!produto) return;
+
+  // Converte pacotes em caixas
+  const pacotesPorVolume = produto.pacotesPorVolume || 50;
+  const caixas = qtdPacotes / pacotesPorVolume;
+
   salvarEstadoParaUndo();
+
+  // Verifica disponibilidade física em caixas
   const disp = buscarDisponibilidadeProduto(pid);
-  let resto = q;
+  let restoCaixas = Math.ceil(caixas);
   const reservas = [];
+
   disp.locais.forEach(l => {
-    if (resto <= 0) return;
-    const qr = Math.min(resto, l.disponivel);
-    if (qr > 0) { reservas.push({ prateleiraId: l.prateleiraId, posicao: l.posicao, quantidade: qr }); resto -= qr; }
+    if (restoCaixas <= 0) return;
+
+    const qr = Math.min(restoCaixas, l.disponivel);
+
+    if (qr > 0) {
+      reservas.push({
+        prateleiraId: l.prateleiraId,
+        posicao: l.posicao,
+        quantidade: qr
+      });
+
+      restoCaixas -= qr;
+    }
   });
+
+  // Registra as reservas na carga
   reservas.forEach(r => {
     state.carga.push({
       uid: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      id: pid, quantidade: r.quantidade, prateleira: r.prateleiraId, posicao: r.posicao,
+      id: pid,
+      quantidade: r.quantidade,
+      prateleira: r.prateleiraId,
+      posicao: r.posicao,
       pedidoCodigo: pedidoAtualEmEdicao.codigo
     });
   });
+
+  // Adiciona ou atualiza o item do pedido
   if (!pedidoAtualEmEdicao.itens[pid]) {
-    pedidoAtualEmEdicao.itens[pid] = { produtoId: pid, nome: produto.nome, codigoInterno: produto.codigoInterno || '', pacotes: 0, caixas: 0 };
+    pedidoAtualEmEdicao.itens[pid] = {
+      produtoId: pid,
+      nome: produto.nome,
+      codigoInterno: produto.codigoInterno || '',
+      pacotesPorVolume: pacotesPorVolume,
+      pacotes: 0,
+      caixas: 0
+    };
   }
-  pedidoAtualEmEdicao.itens[pid].pacotes += q;
-  pedidoAtualEmEdicao.itens[pid].caixas += q;
+
+  pedidoAtualEmEdicao.itens[pid].pacotes += qtdPacotes;
+  pedidoAtualEmEdicao.itens[pid].caixas += caixas;
+
+  // Mantém a lógica de salvamento existente
   setData(STORAGE_KEYS.carga, state.carga);
   setData(STORAGE_KEYS.pedidosSeparar, state.pedidosSeparar);
+
+  // Atualiza a interface
   atualizarPedidoNovo();
   carregarPrateleiras();
   carregarCarga();
   atualizarDashboard();
-  if (resto > 0) mostrarToast(`⚠️ Faltam ${resto} cx de ${produto.nome}!`, 'warning');
-  else mostrarToast(`✅ ${q} caixas adicionadas`, 'success');
+
+  if (restoCaixas > 0) {
+    mostrarToast(`⚠️ Adicionado! Faltam ${restoCaixas} caixas no estoque.`, 'warning');
+  } else {
+    mostrarToast(`✅ ${qtdPacotes} pacotes (${caixas.toFixed(2)} cx) adicionados!`, 'success');
+  }
 }
+
 
 function removerItemPedidoSeparacao(produtoId) {
   if (!pedidoAtualEmEdicao) return;
@@ -3968,36 +4015,99 @@ function finalizarPedidoSeparacao() {
   mostrarToast('✅ Finalizado!', 'success');
 }
 
+
 function atualizarPedidoNovo() {
   const c = document.getElementById('pedidoNovoItens');
   if (!c) return;
-  if (!pedidoAtualEmEdicao) { c.innerHTML = '<p style="color:var(--text-muted);">Inicie um pedido para adicionar itens.</p>'; return; }
+
+  if (!pedidoAtualEmEdicao) {
+    c.innerHTML = '<p style="color:var(--text-muted);">Inicie um pedido para adicionar itens.</p>';
+    return;
+  }
+
   const itens = pedidoAtualEmEdicao.itens;
+
+  // Calcula os totais do pedido
+  let totalPacotes = 0;
+  let totalCaixas = 0;
+
   const itensHtml = Object.values(itens).map(item => {
-    const res = state.carga.filter(c => c.id === item.produtoId && c.pedidoCodigo === pedidoAtualEmEdicao.codigo).reduce((a, c) => a + c.quantidade, 0);
-    const falta = Math.max(0, item.pacotes - res);
-    const locais = state.carga.filter(c => c.id === item.produtoId && c.pedidoCodigo === pedidoAtualEmEdicao.codigo).map(c => `${c.prateleira}${c.posicao}`).join(', ');
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid var(--border);color:var(--text);">
-      <span><strong>${item.nome}</strong> (${item.codigoInterno || 'sem código'})<br>
-      <small style="color:var(--text-muted);">Pedido: ${item.pacotes} cx | Reservado: ${res} (${locais || 'nenhum'}) | Produzir: ${falta}</small></span>
-      <button class="btn btn-xs btn-danger" onclick="removerItemPedidoSeparacao('${item.produtoId}')">🗑️</button>
-    </div>`;
+
+    // Quantidade reservada em caixas
+    const res = state.carga
+      .filter(c => c.id === item.produtoId && c.pedidoCodigo === pedidoAtualEmEdicao.codigo)
+      .reduce((a, c) => a + c.quantidade, 0);
+
+    // Conversão das caixas reservadas em pacotes
+    const pacotesPorVolume = item.pacotesPorVolume || 50;
+    const pacotesReservados = res * pacotesPorVolume;
+
+    // Quantidade de pacotes que ainda precisam ser produzidos
+    const falta = Math.max(0, item.pacotes - pacotesReservados);
+
+    totalPacotes += item.pacotes;
+    totalCaixas += item.caixas;
+
+    // Locais de armazenamento reservados
+    const locais = state.carga
+      .filter(c => c.id === item.produtoId && c.pedidoCodigo === pedidoAtualEmEdicao.codigo)
+      .map(c => `${c.prateleira}${c.posicao}`)
+      .join(', ');
+
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid var(--border); color:var(--text);">
+        <div style="flex:1;">
+          <strong>${item.nome}</strong> (${item.codigoInterno || 'sem código'})<br>
+
+          <small style="color:var(--text-muted);">
+            Pedido: ${item.pacotes} pacotes (${item.caixas.toFixed(2)} cx)<br>
+            Reservado: ${res} cx (${pacotesReservados} pacotes)<br>
+            Produzir: ${falta} pacotes<br>
+            Locais: ${locais || 'nenhum'}
+          </small>
+        </div>
+
+        <button class="btn btn-xs btn-danger" onclick="removerItemPedidoSeparacao('${item.produtoId}')">🗑️</button>
+      </div>
+    `;
   }).join('');
-  const totalCx = Object.values(itens).reduce((a, i) => a + i.pacotes, 0);
+
   c.innerHTML = `
     <h4 style="color:var(--text);">Pedido: ${pedidoAtualEmEdicao.codigo}</h4>
-    <p style="color:var(--text);"><strong>Total:</strong> ${totalCx} caixas</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:15px 0; padding:15px; background:var(--bg-subtle); border-radius:8px; border:1px solid var(--border);">
+
+      <div style="text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:var(--primary);">${totalPacotes}</div>
+        <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase;">Total Pacotes</div>
+      </div>
+
+      <div style="text-align:center;">
+        <div style="font-size:24px; font-weight:800; color:var(--accent);">${totalCaixas.toFixed(2)}</div>
+        <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase;">Total Caixas</div>
+      </div>
+
+    </div>
+
     ${itensHtml || '<p style="color:var(--text-muted);">Nenhum item.</p>'}
+
     <div style="display:flex; gap:10px; margin-top:15px; flex-wrap:wrap;">
+
       <select id="pedidoNovoProdutoSelect" style="flex:2; min-width:200px;">
-        <option value="">Selecione...</option>
+        <option value="">Selecione o produto...</option>
         ${state.produtos.map(p => `<option value="${p.id}">${p.nome}</option>`).join('')}
       </select>
-      <input type="number" id="pedidoNovoQuantidadeInput" placeholder="Qtd (cx)" min="1" style="flex:1; min-width:120px;">
+
+      <input type="number" id="pedidoNovoQuantidadeInput" placeholder="Qtd (pacotes)" min="1" style="flex:1; min-width:120px;">
+
       <button class="btn btn-md btn-success" onclick="adicionarItemPedidoSeparacao()">➕ Adicionar</button>
+
       <button class="btn btn-md btn-primary" onclick="finalizarPedidoSeparacao()">✅ Finalizar</button>
-    </div>`;
+
+    </div>
+  `;
 }
+
 
 function atualizarListasPedidos() {
   const ls = document.getElementById('listaPedidosSeparar');
@@ -4333,31 +4443,31 @@ function registrarProducaoCarga(produtoId) {
   mostrarToast(`✅ ${q} caixas produzidas! Insumos descontados.`, 'success');
 }
 
-function editarQuantidadeCarga(produtoId) {
-  const item = state.pedidoCargaAtual.itens[produtoId];
-  if (!item) return;
-  const reservado = getReservadoCargaAtual(produtoId);
-  const produzido = item.quantidadeProduzida || 0;
-  const minPedida = reservado + produzido;
-  const resp = prompt(
-    `✏️ Editar quantidade de "${item.nome}"\n\n` +
-    `Pedida atual: ${item.quantidadePedida} cx\n` +
-    `Já reservado: ${reservado} cx\n` +
-    `Já produzido: ${produzido} cx\n\n` +
-    `Nova quantidade pedida (mínimo ${minPedida}):`,
-    item.quantidadePedida
-  );
-  if (resp === null) return;
-  const q = parseInt(resp);
-  if (isNaN(q) || q < minPedida) {
-    mostrarToast(`❌ Valor inválido! Mínimo: ${minPedida}`, 'error'); return;
+  function editarQuantidadeCarga(produtoId) {
+    const item = state.pedidoCargaAtual.itens[produtoId];
+    if (!item) return;
+    const reservado = getReservadoCargaAtual(produtoId);
+    const produzido = item.quantidadeProduzida || 0;
+    const minPedida = reservado + produzido;
+    const resp = prompt(
+      `✏️ Editar quantidade de "${item.nome}"\n\n` +
+      `Pedida atual: ${item.quantidadePedida} cx\n` +
+      `Já reservado: ${reservado} cx\n` +
+      `Já produzido: ${produzido} cx\n\n` +
+      `Nova quantidade pedida (mínimo ${minPedida}):`,
+      item.quantidadePedida
+    );
+    if (resp === null) return;
+    const q = parseInt(resp);
+    if (isNaN(q) || q < minPedida) {
+      mostrarToast(`❌ Valor inválido! Mínimo: ${minPedida}`, 'error'); return;
+    }
+    salvarEstadoParaUndo();
+    item.quantidadePedida = q;
+    salvarPedidoCarga();
+    atualizarPedidoCarga();
+    mostrarToast('✅ Quantidade atualizada!', 'success');
   }
-  salvarEstadoParaUndo();
-  item.quantidadePedida = q;
-  salvarPedidoCarga();
-  atualizarPedidoCarga();
-  mostrarToast('✅ Quantidade atualizada!', 'success');
-}
 
 function finalizarPedidoCargaCompleto() {
   if (!state.pedidoCargaAtual.ativo) { mostrarToast('❌ Nenhum pedido de carga ativo!', 'error'); return; }
